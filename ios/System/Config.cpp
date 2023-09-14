@@ -1,0 +1,31 @@
+// Config.cpp - Saoirse config
+//   Written by Palapeli
+//
+// SPDX-License-Identifier: GPL-2.0-only
+
+#include "Config.hpp"
+#include <cstring>
+
+Config* Config::s_instance;
+
+bool Config::IsISFSPathReplaced(const char* path)
+{
+    // A list of paths to be replaced will be provided by the channel in the
+    // future.
+    if (strncmp(path, "/title/00010000/", sizeof("/title/00010000/") - 1) == 0)
+        return true;
+    if (strncmp(path, "/title/00010004/", sizeof("/title/00010004/") - 1) == 0)
+        return true;
+
+    return false;
+}
+
+bool Config::IsFileLogEnabled()
+{
+    return true;
+}
+
+bool Config::BlockIOSReload()
+{
+    return false;
+}
