@@ -1,0 +1,93 @@
+// DiskManager.hpp - I/O storage device manager
+//   Written by Palapeli
+//
+// SPDX-License-Identifier: GPL-2.0-only
+
+#pragma once
+
+#include "FAT.h"
+#include "SDCard.hpp"
+#include "USB.hpp"
+#include "USBStorage.hpp"
+#include <OS.hpp>
+#include <cstring>
+#include <variant>
+
+class DiskManager
+{
+public:
+    static DiskManager* s_instance;
+
+    DiskManager();
+    ~DiskManager();
+
+    static constexpr u32 DeviceCount = 9;
+
+    bool IsInserted(u32 devId);
+    bool IsMounted(u32 devId);
+    void SetError(u32 devId);
+    FATFS* GetFilesystem(u32 devId);
+    void ForceUpdate();
+
+    static constexpr u32 DRVToDevID(u32 drv)
+    {
+        return drv;
+    }
+
+    static constexpr u32 DevIDToDrv(u32 devId)
+    {
+        return devId;
+    }
+
+private:
+    void USBFatal();
+    void USBChange(USB::DeviceEntry* devices, u32 count);
+
+public:
+    bool IsLogEnabled();
+    void WriteToLog(const char* str, u32 len);
+
+    bool DeviceInit(u32 devId);
+    bool DeviceRead(u32 devId, void* data, u32 sector, u32 count);
+    bool DeviceWrite(u32 devId, const void* data, u32 sector, u32 count);
+    bool DeviceSync(u32 devId);
+
+private:
+    void Run();
+    static s32 ThreadEntry(void* arg);
+
+    struct DeviceHandle {
+        FATFS fs;
+        std::variant<std::monostate, SDCard, USBStorage> disk;
+        bool enabled;
+        bool inserted;
+        bool error;
+        bool mounted;
+    };
+
+    void InitHandle(u32 devId);
+    void UpdateHandle(u32 devId);
+    bool OpenLogFile();
+
+private:
+    DeviceHandle m_devices[DeviceCount] = {};
+
+    struct USBDeviceHandle {
+        bool inUse;
+        u32 usbId;
+        u32 intId;
+    };
+
+    USBDeviceHandle m_usbDevices[USB::MaxDevices];
+
+    u32 m_usbDeviceCount = 0;
+    bool m_usbError = false;
+
+    Thread m_thread;
+    Queue<IOS::Request*> m_timerQueue;
+    s32 m_timer;
+
+    bool m_logEnabled = false;
+    u32 m_logDevice = DeviceCount;
+    FIL m_logFile = {};
+};

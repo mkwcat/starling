@@ -5,19 +5,21 @@
 SUFFIXES += .d
 
 # Project directory
-BUILD         := build
-PPC_SOURCES   := $(wildcard ppc/*) $(wildcard common/*)
-PPC_INCLUDES  := -Ippc -Icommon
-IOS_SOURCES   := $(wildcard ios/*) $(wildcard common/*)
-IOS_INCLUDES  := -Iios -Icommon
-ASSETS        := $(wildcard assets/*)
-BIN           := bin
+BUILD            := build
+LOADER_SOURCES   := loader
+LOADER_INCLUDES  := -Iloader -Icommon
+CHANNEL_SOURCES  := channel
+CHANNEL_INCLUDES := -Ichannel -Iloader -Icommon
+IOS_SOURCES      := ios
+IOS_INCLUDES     := -Iios -Icommon
+COMMON_SOURCES   := common
+ASSETS           := $(wildcard assets/*)
+BIN              := bin
 
 # Target module names
 TARGET_IOS_MODULE  := $(BUILD)/ios_module
 TARGET_IOS_LOADER  := $(BUILD)/ios_loader
-TARGET_PPC_CHANNEL := $(BUILD)/ppc_channel
-TARGET_PPC_LOADER  := $(BUILD)/ppc_loader
+TARGET_PPC         := $(BUILD)/starling
 TARGET_PPC_STUB    := $(BUILD)/boot
 
 # Data archives
@@ -26,58 +28,65 @@ DATA_CHANNEL       := $(BUILD)/data/channel.arc
 
 # Create build directories
 DUMMY         != mkdir -p $(BIN) $(BUILD) \
-                 $(foreach dir, $(PPC_SOURCES), $(BUILD)/$(dir)) \
-		 $(foreach dir, $(IOS_SOURCES), $(BUILD)/$(dir)) \
+                 $(BUILD)/$(LOADER_SOURCES) \
+                 $(BUILD)/$(CHANNEL_SOURCES) \
+		 $(BUILD)/$(IOS_SOURCES) \
+		 $(BUILD)/$(COMMON_SOURCES) \
 		 $(DATA_LOADER).d \
 		 $(DATA_CHANNEL).d \
 		 $(foreach dir, $(ASSETS), $(DATA_CHANNEL).d/$(dir))
 
 # Compiler definitions
-PPC_PREFIX    := $(DEVKITPPC)/bin/powerpc-eabi-
-PPC_CC        := $(PPC_PREFIX)gcc
-PPC_LD        := $(PPC_PREFIX)ld
-PPC_OBJCOPY   := $(PPC_PREFIX)objcopy
+PPC_PREFIX       := $(DEVKITPPC)/bin/powerpc-eabi-
+PPC_CC           := $(PPC_PREFIX)gcc
+PPC_LD           := $(PPC_PREFIX)ld
+PPC_OBJCOPY      := $(PPC_PREFIX)objcopy
 
-PPC_CFILES    := $(foreach dir, $(PPC_SOURCES), $(wildcard $(dir)/*.c))
-PPC_CPPFILES  := $(foreach dir, $(PPC_SOURCES), $(wildcard $(dir)/*.cpp))
-PPC_SFILES    := $(foreach dir, $(PPC_SOURCES), $(wildcard $(dir)/*.s))
-PPC_OFILES    := $(PPC_CPPFILES:.cpp=.cpp.ppc.o) $(PPC_CFILES:.c=.c.ppc.o) \
-		 $(PPC_SFILES:.s=.s.ppc.o)
-PPC_OFILES    := $(addprefix $(BUILD)/, $(PPC_OFILES))
+LOADER_CFILES    := $(wildcard $(LOADER_SOURCES)/*.c)
+LOADER_CPPFILES  := $(wildcard $(LOADER_SOURCES)/*.cpp)
+LOADER_SFILES    := $(wildcard $(LOADER_SOURCES)/*.s)
+LOADER_OFILES    := $(LOADER_CPPFILES:.cpp=.cpp.ppc.o) $(LOADER_CFILES:.c=.c.ppc.o) \
+		    $(LOADER_SFILES:.s=.s.ppc.o)
+LOADER_OFILES    := $(addprefix $(BUILD)/, $(LOADER_OFILES))
 
-PPC_CHANNEL_LD := ppc_channel.ld
-PPC_LOADER_LD := ppc_loader.ld
-PPC_STUB_LD   := ppc_stub.ld
+CHANNEL_CFILES   := $(wildcard $(CHANNEL_SOURCES)/*.c) $(wildcard $(COMMON_SOURCES)/*.c)
+CHANNEL_CPPFILES := $(wildcard $(CHANNEL_SOURCES)/*.cpp) $(wildcard $(COMMON_SOURCES)/*.cpp)
+CHANNEL_SFILES   := $(wildcard $(CHANNEL_SOURCES)/*.s) $(wildcard $(COMMON_SOURCES)/*.s)
+CHANNEL_OFILES   := $(CHANNEL_CPPFILES:.cpp=.cpp.ppc.o) $(CHANNEL_CFILES:.c=.c.ppc.o) \
+		    $(CHANNEL_SFILES:.s=.s.ppc.o)
+CHANNEL_OFILES   := $(addprefix $(BUILD)/, $(CHANNEL_OFILES))
 
-IOS_PREFIX    := $(DEVKITARM)/bin/arm-none-eabi-
-IOS_CC        := $(IOS_PREFIX)gcc
-IOS_LD        := $(IOS_PREFIX)ld
-IOS_OBJCOPY   := $(IOS_PREFIX)objcopy
+PPC_LD           := ppc.ld
 
-IOS_CFILES    := $(foreach dir, $(IOS_SOURCES), $(wildcard $(dir)/*.c))
-IOS_CPPFILES  := $(foreach dir, $(IOS_SOURCES), $(wildcard $(dir)/*.cpp))
-IOS_SFILES    := $(foreach dir, $(IOS_SOURCES), $(wildcard $(dir)/*.s))
-IOS_OFILES    := $(IOS_CPPFILES:.cpp=.cpp.ios.o) $(IOS_CFILES:.c=.c.ios.o) \
-		 $(IOS_SFILES:.s=.s.ios.o)
-IOS_OFILES    := $(addprefix $(BUILD)/, $(IOS_OFILES))
+IOS_PREFIX       := $(DEVKITARM)/bin/arm-none-eabi-
+IOS_CC           := $(IOS_PREFIX)gcc
+IOS_LD           := $(IOS_PREFIX)ld
+IOS_OBJCOPY      := $(IOS_PREFIX)objcopy
 
-IOS_MODULE_LD := ios_module.ld
-IOS_LOADER_LD := ios_loader.ld
+IOS_CFILES       := $(wildcard $(IOS_SOURCES)/*.c) $(wildcard $(COMMON_SOURCES)/*.c)
+IOS_CPPFILES     := $(wildcard $(IOS_SOURCES)/*.cpp) $(wildcard $(COMMON_SOURCES)/*.cpp)
+IOS_SFILES       := $(wildcard $(IOS_SOURCES)/*.s) $(wildcard $(COMMON_SOURCES)/*.s)
+IOS_OFILES       := $(IOS_CPPFILES:.cpp=.cpp.ios.o) $(IOS_CFILES:.c=.c.ios.o) \
+		    $(IOS_SFILES:.s=.s.ios.o)
+IOS_OFILES       := $(addprefix $(BUILD)/, $(IOS_OFILES))
 
-ASSETFILES    := $(foreach dir, $(ASSETS), $(wildcard $(dir)/*))
+IOS_MODULE_LD    := ios_module.ld
+IOS_LOADER_LD    := ios_loader.ld
 
-WUJ5          := tools/wuj5/wuj5.py
-ELF2DOL       := tools/elf2dol.py
-INCBIN        := tools/incbin.S
+ASSETFILES       := $(foreach dir, $(ASSETS), $(wildcard $(dir)/*))
 
-DEPS          := $(PPC_OFILES:.o=.d) $(IOS_OFILES:.o=.d)
+WUJ5             := tools/wuj5/wuj5.py
+ELF2DOL          := tools/elf2dol.py
+INCBIN           := tools/incbin.S
+
+DEPS             := $(LOADER_OFILES:.o=.d) $(CHANNEL_OFILES:.o=.d) $(IOS_OFILES:.o=.d)
 
 # Compiler flags
 WFLAGS   := -Wall -Wextra -Wno-unused-const-variable \
 	    -Wno-unused-function -Wno-pointer-arith -Wno-narrowing \
 	    -Wno-format-truncation -Werror
 
-CFLAGS   := $(INCLUDE) -include LibC/PreInclude.h -O1 -fomit-frame-pointer \
+CFLAGS   := $(INCLUDE) -O1 -fomit-frame-pointer \
             -fno-exceptions -fverbose-asm -ffunction-sections -fdata-sections \
             -fno-builtin-memcpy -fno-builtin-memset \
             $(WFLAGS)
@@ -93,9 +102,9 @@ IOS_LDFLAGS := $(IOS_ARCH) -flto -nostdlib -lgcc -n -Wl,--gc-sections -Wl,-stati
 PPC_LDFLAGS := -flto -nodefaultlibs -nostdlib -lgcc -n -Wl,--gc-sections -Wl,-static
 
 IOS_DEFS := $(IOS_ARCH) $(IOS_INCLUDES) -DTARGET_IOS
-PPC_DEFS := $(PPC_INCLUDES) -DTARGET_PPC -Wno-attribute-alias -Wno-missing-attributes
+PPC_DEFS := -DTARGET_PPC -Wno-attribute-alias -Wno-missing-attributes
 
-default: $(TARGET_PPC_LOADER).dol
+default: $(TARGET_PPC).dol
 
 clean:
 	@echo Cleaning: $(BIN) $(BUILD)
@@ -103,17 +112,41 @@ clean:
 
 -include $(DEPS)
 
-$(BUILD)/%.c.ppc.o: %.c
+$(BUILD)/$(LOADER_SOURCES)/%.c.ppc.o: $(LOADER_SOURCES)/%.c
 	@echo PPC: $<
-	@$(PPC_CC) -MMD -MF $(BUILD)/$*.c.ppc.d $(CFLAGS) $(PPC_DEFS) -c -o $@ $<
+	@$(PPC_CC) -MMD -MF $(BUILD)/$(LOADER_SOURCES)/$*.c.ppc.d $(CFLAGS) $(PPC_DEFS) $(LOADER_INCLUDES) -c -o $@ $<
 
-$(BUILD)/%.cpp.ppc.o: %.cpp
+$(BUILD)/$(LOADER_SOURCES)/%.cpp.ppc.o: $(LOADER_SOURCES)/%.cpp
 	@echo PPC: $<
-	@$(PPC_CC) -MMD -MF $(BUILD)/$*.cpp.ppc.d $(CXXFLAGS) $(PPC_DEFS) -c -o $@ $<
+	@$(PPC_CC) -MMD -MF $(BUILD)/$(LOADER_SOURCES)/$*.cpp.ppc.d $(CXXFLAGS) $(PPC_DEFS) $(LOADER_INCLUDES) -c -o $@ $<
 
-$(BUILD)/%.s.ppc.o: %.s
+$(BUILD)/$(LOADER_SOURCES)/%.s.ppc.o: $(LOADER_SOURCES)/%.s
 	@echo PPC: $<
-	@$(PPC_CC) -MMD -MF $(BUILD)/$*.s.ppc.d $(AFLAGS) $(PPC_DEFS) -c -o $@ $<
+	@$(PPC_CC) -MMD -MF $(BUILD)/$(LOADER_SOURCES)/$*.s.ppc.d $(AFLAGS) $(PPC_DEFS) $(LOADER_INCLUDES) -c -o $@ $<
+
+$(BUILD)/$(CHANNEL_SOURCES)/%.c.ppc.o: $(CHANNEL_SOURCES)/%.c
+	@echo PPC: $<
+	@$(PPC_CC) -MMD -MF $(BUILD)/$(CHANNEL_SOURCES)/$*.c.ppc.d $(CFLAGS) $(PPC_DEFS) $(CHANNEL_INCLUDES) -c -o $@ $<
+
+$(BUILD)/$(CHANNEL_SOURCES)/%.cpp.ppc.o: $(CHANNEL_SOURCES)/%.cpp
+	@echo PPC: $<
+	@$(PPC_CC) -MMD -MF $(BUILD)/$(CHANNEL_SOURCES)/$*.cpp.ppc.d $(CXXFLAGS) $(PPC_DEFS) $(CHANNEL_INCLUDES) -c -o $@ $<
+
+$(BUILD)/$(CHANNEL_SOURCES)/%.s.ppc.o: $(CHANNEL_SOURCES)/%.s
+	@echo PPC: $<
+	@$(PPC_CC) -MMD -MF $(BUILD)/$(CHANNEL_SOURCES)/$*.s.ppc.d $(AFLAGS) $(PPC_DEFS) $(CHANNEL_INCLUDES) -c -o $@ $<
+
+$(BUILD)/$(COMMON_SOURCES)/%.c.ppc.o: $(COMMON_SOURCES)/%.c
+	@echo PPC: $<
+	@$(PPC_CC) -MMD -MF $(BUILD)/$(COMMON_SOURCES)/$*.c.ppc.d $(CFLAGS) $(PPC_DEFS) $(CHANNEL_INCLUDES) -c -o $@ $<
+
+$(BUILD)/$(COMMON_SOURCES)/%.cpp.ppc.o: $(COMMON_SOURCES)/%.cpp
+	@echo PPC: $<
+	@$(PPC_CC) -MMD -MF $(BUILD)/$(COMMON_SOURCES)/$*.cpp.ppc.d $(CXXFLAGS) $(PPC_DEFS) $(CHANNEL_INCLUDES) -c -o $@ $<
+
+$(BUILD)/$(COMMON_SOURCES)/%.s.ppc.o: $(COMMON_SOURCES)/%.s
+	@echo PPC: $<
+	@$(PPC_CC) -MMD -MF $(BUILD)/$(COMMON_SOURCES)/$*.s.ppc.d $(AFLAGS) $(PPC_DEFS) $(CHANNEL_INCLUDES) -c -o $@ $<
 
 $(BUILD)/%.c.ios.o: %.c
 	@echo IOS: $<
@@ -127,25 +160,15 @@ $(BUILD)/%.s.ios.o: %.s
 	@echo IOS: $<
 	@$(IOS_CC) -MMD -MF $(BUILD)/$*.s.ios.d $(AFLAGS) $(IOS_DEFS) -c -o $@ $<
 
-# PPC Channel
+# PPC Loader / Channel
 
-$(TARGET_PPC_CHANNEL).elf: $(PPC_OFILES) $(PPC_CHANNEL_LD) $(DATA_CHANNEL).o
-	@echo Linking: $(notdir $@)
-	@$(PPC_CC) -g -o $@ $(PPC_OFILES) $(DATA_CHANNEL).o -T$(PPC_CHANNEL_LD) $(PPC_LDFLAGS) -Wl,-Map,$(TARGET_PPC_CHANNEL).map
-
-$(TARGET_PPC_CHANNEL).bin: $(TARGET_PPC_CHANNEL).elf
-	@echo Output: $(notdir $@)
-	@$(PPC_OBJCOPY) $< $@ -O binary
-
-# PPC Loader
-
-$(TARGET_PPC_LOADER).dol: $(TARGET_PPC_LOADER).elf
+$(TARGET_PPC).dol: $(TARGET_PPC).elf
 	@echo Output: $(notdir $@)
 	@python $(ELF2DOL) $< $@
 
-$(TARGET_PPC_LOADER).elf: $(PPC_OFILES) $(PPC_LOADER_LD) $(DATA_LOADER).o $(DATA_CHANNEL).o
+$(TARGET_PPC).elf: $(LOADER_OFILES) $(CHANNEL_OFILES) $(PPC_LD) $(DATA_LOADER).o $(DATA_CHANNEL).o
 	@echo Linking: $(notdir $@)
-	@$(PPC_CC) -g -o $@ $(PPC_OFILES) $(DATA_LOADER).o $(DATA_CHANNEL).o -T$(PPC_LOADER_LD) $(PPC_LDFLAGS)
+	@$(PPC_CC) -g -o $@ $(LOADER_OFILES) $(CHANNEL_OFILES) $(DATA_LOADER).o $(DATA_CHANNEL).o -T$(PPC_LD) $(PPC_LDFLAGS) -Wl,-Map,$(TARGET_PPC).map
 
 # IOS Module
 

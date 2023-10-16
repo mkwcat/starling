@@ -1,0 +1,24 @@
+// EmuDITypes.hpp - Shared types for the emulated DI RM
+//   Written by Palapeli
+//
+// SPDX-License-Identifier: GPL-2.0-only
+
+#pragma once
+
+#include <Types.h>
+
+namespace EmuDITypes
+{
+
+struct DVDPatch {
+    u32 disc_offset;
+    u32 disc_length;
+
+    /* file info */
+    u64 start_cluster;
+    u64 cur_cluster;
+    u32 file_offset;
+    u32 drv;
+};
+
+} // namespace EmuDITypes

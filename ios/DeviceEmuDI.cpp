@@ -1,0 +1,611 @@
+// EmuDI.cpp - Emulated DI RM
+//   Written by Palapeli
+//
+// SPDX-License-Identifier: GPL-2.0-only
+
+#include "DeviceEmuDI.hpp"
+#include <DI.hpp>
+#include <DeviceStarling.hpp>
+#include <DiskManager.hpp>
+#include <ES.hpp>
+#include <EmuDITypes.hpp>
+#include <Log.hpp>
+#include <Syscalls.h>
+#include <System.hpp>
+#include <Types.h>
+#include <VirtualDisc.hpp>
+#include <VirtualDiscISO.hpp>
+#include <cstring>
+
+namespace DeviceEmuDI
+{
+
+typedef struct {
+    u8 cmd;
+    u8 pad[3];
+    u32 args[7];
+} DVDCommand;
+
+static s32 DiMsgQueue = -1;
+static u32 __diMsgData[8];
+static bool DiStarted = false;
+static bool GameStarted = false;
+
+/* 200 for now */
+static EmuDITypes::DVDPatch DiPatches[200];
+static u32 DiNumPatches = 0;
+
+#define DI_PROXY_IOCTL_PATCHDVD 0x00
+#define DI_PROXY_IOCTL_STARTGAME 0x01
+
+#define DI_EOK 0x1
+#define DI_ESECURITY 0x20
+#define DI_EBADARGUMENT 0x80
+
+VirtualDisc* disc;
+bool useVirtualDisc = false;
+
+static DI::DIError
+WriteOutput(void* out, u32 outLen, const void* data, u32 dataLen)
+{
+    if (outLen < dataLen)
+        return DI::DIError::Security;
+
+    memcpy(out, data, dataLen);
+    return DI::DIError::OK;
+}
+
+template <class T>
+static DI::DIError WriteOutputStruct(void* out, u32 outLen, const T* data)
+{
+    return WriteOutput(
+        out, outLen, reinterpret_cast<const void*>(data), sizeof(T)
+    );
+}
+
+/**
+ * IOCTL for the emulated disc drive.
+ * @param[in] block Input DVD command.
+ * @param[in] cmd IOCTL number.
+ * @param[out] out Output buffer.
+ * @param outLen Length of the output buffer.
+ */
+static DI::DIError
+EmuIoctl(DVDCommand* block, DI::DIIoctl cmd, void* out, u32 outLen)
+{
+    assert(disc != nullptr);
+
+    switch (cmd) {
+    case DI::DIIoctl::Reset:
+        PRINT(IOS_EmuDI, INFO, "Reset Drive");
+        return DI::DIError::OK;
+
+    case DI::DIIoctl::ClearCoverInterrupt:
+        return DI::DIError::OK;
+
+    case DI::DIIoctl::Inquiry: {
+        if (outLen != sizeof(DI::DriveInfo)) {
+            PRINT(
+                IOS_EmuDI, ERROR,
+                "Inquiry: Output buffer length does not match DriveInfo"
+            );
+            return DI::DIError::Security;
+        }
+
+        return DI::Instance()->Inquiry(reinterpret_cast<DI::DriveInfo*>(out));
+    }
+
+    case DI::DIIoctl::GetStatusRegister: {
+        u32 disr = 0;
+        return WriteOutputStruct(out, outLen, &disr);
+    }
+
+    case DI::DIIoctl::Read: {
+        u32 inByteLength = block->args[0];
+        u32 inWordOffset = block->args[1];
+
+        if (inByteLength != outLen) {
+            PRINT(
+                IOS_EmuDI, ERROR,
+                "Read: Output buffer length does not match command block"
+            );
+            return DI::DIError::Security;
+        }
+
+        if (!disc->ReadFromPartition(out, inWordOffset, inByteLength))
+            return DI::DIError::Drive;
+
+        return DI::DIError::OK;
+    }
+
+    case DI::DIIoctl::ReadDiskID: {
+        DI::DiskID diskID;
+
+        if (!disc->ReadDiskID(&diskID)) {
+            PRINT(IOS_EmuDI, INFO, "Read DiskID error", diskID.gameID);
+            return DI::DIError::Drive;
+        }
+
+        PRINT(IOS_EmuDI, INFO, "Read DiskID: %.6s", diskID.gameID);
+        return WriteOutputStruct(out, outLen, &diskID);
+    }
+
+    case DI::DIIoctl::UnencryptedRead: {
+        u32 inByteLength = block->args[0];
+        u32 inWordOffset = block->args[1];
+
+        if (inByteLength != outLen) {
+            PRINT(
+                IOS_EmuDI, ERROR,
+                "UnencryptedRead: Output buffer length does not match "
+                "command block"
+            );
+            return DI::DIError::Security;
+        }
+
+        u32 wordOffsetEnd = inWordOffset + ((inByteLength + 3) >> 2);
+
+        // Read for modchip detection (Error #001, unauthorized device has
+        // been detected)
+        if (inWordOffset >= 0x460A0000 && wordOffsetEnd <= 0x460A0008)
+            return DI::DIError::Drive;
+
+        // Same as above but for dual layer discs
+        if (inWordOffset >= 0x7ED40000 && wordOffsetEnd <= 0x7ED40008)
+            return DI::DIError::Drive;
+
+        // Only acceptable range
+        if (wordOffsetEnd > 0x14000)
+            return DI::DIError::Security;
+
+        if (!disc->UnencryptedRead(out, inWordOffset, inByteLength))
+            return DI::DIError::Drive;
+
+        return DI::DIError::OK;
+    }
+
+    case DI::DIIoctl::ReadDiskBca: {
+        // NSMBW reads this as some form of copy protection
+        PRINT(IOS_EmuDI, INFO, "Read disk BCA");
+
+        if (!IsAligned(out, 32))
+            return DI::DIError::Security;
+
+        if (outLen < 0x40)
+            return DI::DIError::Security;
+
+        u8 bca[0x40] = {0};
+        bca[0x33] = 1;
+        return WriteOutput(out, outLen, bca, 0x40);
+    }
+
+    case DI::DIIoctl::GetControlRegister: {
+        u32 dicr = 0;
+        return WriteOutputStruct(out, outLen, &dicr);
+    }
+
+    case DI::DIIoctl::GetCoverRegister: {
+        u32 dicvr = disc->IsInserted() ? 0 : 1;
+        return WriteOutputStruct(out, outLen, &dicvr);
+    }
+
+    default:
+        PRINT(IOS_EmuDI, ERROR, "Unknown ioctl 0x%02X", static_cast<u32>(cmd));
+        return DI::DIError::Security;
+    }
+}
+
+/**
+ * IOCTLV for the emulated disc drive.
+ * @param[in] block Input DVD command.
+ * @param[in] cmd IOCTL number.
+ * @param[in] inCount Input vector count.
+ * @param[out] ioCount Output buffer count.
+ * @param[in,out] vec I/O vectors.
+ */
+static DI::DIError EmuIoctlv(
+    DVDCommand* block, DI::DIIoctl cmd, u32 inCount, u32 ioCount,
+    IOS::TVector* vec
+)
+{
+    assert(disc != nullptr);
+
+    switch (cmd) {
+    case DI::DIIoctl::OpenPartition: {
+        PRINT(IOS_EmuDI, INFO, "Open partition!");
+        if (inCount != 3 || ioCount != 2) {
+            PRINT(IOS_EmuDI, ERROR, "Invalid I/O vector count");
+            return DI::DIError::Security;
+        }
+
+        [[maybe_unused]] const ES::Ticket* inTicket = nullptr;
+        [[maybe_unused]] bool useInTicket = false;
+        [[maybe_unused]] const void* inCerts = nullptr;
+        [[maybe_unused]] u32 inCertsLen = 0;
+
+        if (vec[1].len != 0) {
+            if (vec[1].len < sizeof(ES::Ticket)) {
+                PRINT(
+                    IOS_EmuDI, ERROR, "Input ticket vector size is too short"
+                );
+                return DI::DIError::Security;
+            }
+
+            inTicket = reinterpret_cast<ES::Ticket*>(vec[1].data);
+            useInTicket = true;
+        }
+
+        if (vec[2].len != 0) {
+            inCerts = vec[2].data;
+            inCertsLen = vec[2].len;
+        }
+
+        if (vec[3].len < sizeof(ES::TMDFixed<512>)) {
+            PRINT(IOS_EmuDI, ERROR, "Output TMD vector size is too short");
+            return DI::DIError::Security;
+        }
+
+        auto outTmd = reinterpret_cast<ES::TMDFixed<512>*>(vec[3].data);
+
+        if (vec[4].len < sizeof(ES::ESError)) {
+            PRINT(IOS_EmuDI, ERROR, "Output ES error vector size is too short");
+            return DI::DIError::Security;
+        }
+
+        [[maybe_unused]] auto esError =
+            reinterpret_cast<ES::ESError*>(vec[4].data);
+
+        PRINT(IOS_EmuDI, INFO, "All open partition params correct");
+        return disc->OpenPartition(block->args[0], outTmd);
+    }
+
+    default:
+        PRINT(IOS_EmuDI, ERROR, "Unknown ioctlv 0x%02X", static_cast<u32>(cmd));
+        return DI::DIError::Security;
+    }
+}
+
+/**
+ * Open a patch file by its identifier.
+ * @param[out] fp FATFS file pointer
+ * @param[in] patch DVD patch to open.
+ */
+static void OpenPatchFile(FIL* fp, EmuDITypes::DVDPatch* patch)
+{
+    memset(fp, 0, sizeof(FIL));
+
+    // Get FATFS object
+    auto devId = DiskManager::s_instance->DRVToDevID(patch->drv);
+    auto fatfs = DiskManager::s_instance->GetFilesystem(devId);
+
+    fp->obj.fs = fatfs;
+    fp->obj.id = fatfs->id;
+    fp->obj.sclust = patch->start_cluster;
+    fp->obj.objsize = 0xFFFFFFFF;
+    fp->flag = FA_READ;
+    fp->fptr = patch->file_offset;
+    fp->clust = patch->cur_cluster;
+}
+
+static inline u32 SearchPatch(u32 offset)
+{
+    for (s32 j = 0, i = DiNumPatches; i != 0; i >>= 1) {
+        s32 k = j + (i >> 1);
+        u32 p_start = DiPatches[k].disc_offset;
+        u32 p_end = p_start + DiPatches[k].disc_length;
+
+        if (p_start == offset)
+            return k;
+        if (offset > p_start) {
+            if (p_end > offset)
+                return k;
+            // Move right
+            j = k + 1;
+            i--;
+        }
+        // offset < p_start
+    }
+    return DiNumPatches;
+}
+
+static s32 RealRead(void* outbuf, u32 offset, u32 length)
+{
+    DVDCommand rblock;
+    rblock.cmd = static_cast<u8>(DI::DIIoctl::Read);
+    rblock.args[0] = length;
+    rblock.args[1] = offset;
+
+    if (useVirtualDisc) {
+        return static_cast<s32>(
+            EmuIoctl(&rblock, DI::DIIoctl::Read, outbuf, length)
+        );
+    }
+
+    return static_cast<s32>(DI::Instance()->Read(outbuf, length, offset));
+}
+
+static inline bool IsPatchedOffset(u32 wordOffset)
+{
+    return wordOffset & 0x80000000;
+}
+
+static s32 Read(u8* outbuf, u32 offset, u32 length)
+{
+    if (!IsPatchedOffset(offset)) {
+        if (!IsPatchedOffset(offset + (length >> 2) - 1)) {
+            // Not patched read, forward to real DI
+            return RealRead(outbuf, offset, length);
+        }
+
+        // Part DVD read, part SD read
+        const s32 ret = RealRead(outbuf, offset, (0x80000000 - offset) << 2);
+        if (ret != DI_EOK) {
+            PRINT(IOS_EmuDI, ERROR, "Partial read failed: %d", ret);
+            // If it fails, just memset 0 the output buffer
+            memset(outbuf, 0, (0x80000000 - offset) << 2);
+        }
+
+        outbuf += (0x80000000 - offset) << 2;
+        length -= (0x80000000 - offset) << 2;
+    }
+
+    for (u32 idx = SearchPatch(offset); length != 0; idx++) {
+        PRINT(IOS_EmuDI, INFO, "Read patch %d of %d", idx, DiNumPatches);
+        if (idx >= DiNumPatches) {
+            PRINT(IOS_EmuDI, WARN, "Out of bounds DVD read");
+            memset(outbuf, 0, length);
+            return DI_EOK; // Just success, I guess?
+        }
+
+        FIL f;
+        OpenPatchFile(&f, &DiPatches[idx]);
+
+        u32 read_len = DiPatches[idx].disc_length << 2;
+        if (DiPatches[idx].disc_offset != offset) {
+            const FRESULT fret =
+                f_lseek(&f, (offset - DiPatches[idx].disc_offset) << 2);
+            if (fret != FR_OK) {
+                PRINT(IOS_EmuDI, ERROR, "FS_LSeek failed: %d", fret);
+                System::Abort();
+            }
+            read_len -= (offset - DiPatches[idx].disc_offset) << 2;
+        }
+
+        if (read_len > length)
+            read_len = length;
+        UINT read = 0;
+
+        const FRESULT fret = f_read(&f, outbuf, read_len, &read);
+        if (fret != FR_OK) {
+            PRINT(IOS_EmuDI, ERROR, "FS_Read failed: %d", fret);
+            memset(outbuf + read, 0, read_len - read);
+        }
+
+        outbuf += read_len;
+        length -= read_len;
+        offset += read_len >> 2;
+    }
+
+    return DI_EOK;
+}
+
+/**
+ * Handle DI IOCTLs for patched games, returning false forwards the command to
+ * the actual disc image.
+ */
+static bool DI_DoNewIOCTL(IOS::Request* req)
+{
+    switch (static_cast<DI::DIIoctl>(req->ioctl.cmd)) {
+    case DI::DIIoctl::Read: {
+        /* [TODO] Check partition */
+        if (req->ioctl.in_len != sizeof(DVDCommand)) {
+            req->Reply(DI_ESECURITY);
+            return true;
+        }
+        DVDCommand* block = reinterpret_cast<DVDCommand*>(req->ioctl.in);
+        if (block->cmd != static_cast<u8>(DI::DIIoctl::Read)) {
+            req->Reply(DI_EBADARGUMENT);
+            return true;
+        }
+
+        u8* outbuf = reinterpret_cast<u8*>(req->ioctl.out);
+        u32 offset = block->args[1];
+        u32 length = block->args[0];
+        if (length > req->ioctl.out_len) {
+            PRINT(
+                IOS_EmuDI, ERROR,
+                "DI_IOCTL_READ: Output size < read length (0x%X, 0x%x)", length,
+                req->ioctl.out_len
+            );
+            req->Reply(DI_ESECURITY);
+            return true;
+        }
+        req->Reply(Read(outbuf, offset, length & ~3));
+        return true;
+    }
+
+    default:
+        break;
+    }
+
+    switch (req->ioctl.cmd) {
+    case DI_PROXY_IOCTL_PATCHDVD: {
+        // Assuming patches are valid, this could only be called from secure
+        // code
+        if (GameStarted)
+            return false;
+        if (req->ioctl.in_len == 0) {
+            req->Reply(IOS::IOSError::INVALID);
+            return true;
+        }
+
+        DiNumPatches = req->ioctl.in_len / sizeof(EmuDITypes::DVDPatch);
+        if (req->ioctl.in_len > sizeof(DiPatches)) {
+            PRINT(
+                IOS_EmuDI, ERROR,
+                "DI_PROXY_IOCTL_PATCHDVD: "
+                "Not enough memory for DVD patches"
+            );
+            req->Reply(IOS_ERROR_NO_MEMORY);
+            return true;
+        }
+        memcpy(DiPatches, req->ioctl.in, req->ioctl.in_len);
+        req->Reply(IOS_ERROR_OK);
+        return true;
+    }
+
+    case DI_PROXY_IOCTL_STARTGAME: {
+        if (GameStarted)
+            return false;
+        PRINT(IOS_EmuDI, WARN, "DI_PROXY_IOCTL_STARTGAME: Starting game...");
+        GameStarted = true;
+        req->Reply(IOS_ERROR_OK);
+        return true;
+    }
+
+    default:
+        break;
+    }
+
+    return false;
+}
+
+static inline void ReqOpen(IOS::Request* req)
+{
+    if (strcmp(req->open.path, "~dev/di") != 0) {
+        req->Reply(IOS::IOSError::NOT_FOUND);
+        return;
+    }
+
+    PRINT(IOS_EmuDI, INFO, "Open emulated /dev/di");
+
+    req->Reply(0);
+}
+
+static inline void ReqClose(IOS::Request* req)
+{
+    req->Reply(IOS::IOSError::OK);
+}
+
+static inline void ReqIoctl(IOS::Request* req)
+{
+    if (DI_DoNewIOCTL(req))
+        return;
+
+    // If DoNewIOCTL returns false, forward to real DI
+
+    if (useVirtualDisc) {
+        // DI emulation
+        if (req->ioctl.in_len < sizeof(DVDCommand)) {
+            PRINT(IOS_EmuDI, ERROR, "Wrong input command block size");
+            req->Reply(static_cast<s32>(DI::DIError::Security));
+            return;
+        }
+
+        auto reply = EmuIoctl(
+            reinterpret_cast<DVDCommand*>(req->ioctl.in),
+            static_cast<DI::DIIoctl>(req->ioctl.cmd), req->ioctl.out,
+            req->ioctl.out_len
+        );
+        req->Reply(static_cast<s32>(reply));
+        return;
+    }
+
+    // Real drive
+    const s32 ret = IOS_Ioctl(
+        DI::Instance()->GetFd(), req->ioctl.cmd, req->ioctl.in,
+        req->ioctl.in_len, req->ioctl.out, req->ioctl.out_len
+    );
+    req->Reply(ret);
+}
+
+static inline void ReqIoctlv(IOS::Request* req)
+{
+    // Probably won't be replacing any IOCTLVs
+
+    if (useVirtualDisc) {
+        // DI emulation
+        if (req->ioctlv.in_count < 1 ||
+            req->ioctlv.vec[0].len < sizeof(DVDCommand)) {
+            PRINT(IOS_EmuDI, ERROR, "Wrong input command block size");
+            req->Reply(static_cast<s32>(DI::DIError::Security));
+            return;
+        }
+
+        auto reply = EmuIoctlv(
+            reinterpret_cast<DVDCommand*>(req->ioctlv.vec[0].data),
+            static_cast<DI::DIIoctl>(req->ioctlv.cmd), req->ioctlv.in_count,
+            req->ioctlv.out_count, req->ioctlv.vec
+        );
+        req->Reply(static_cast<s32>(reply));
+        return;
+    }
+
+    // Real drive
+    const s32 ret = IOS_Ioctlv(
+        DI::Instance()->GetFd(), req->ioctlv.cmd, req->ioctlv.in_count,
+        req->ioctlv.out_count, req->ioctlv.vec
+    );
+    req->Reply(ret);
+}
+
+void HandleRequest(IOS::Request* req)
+{
+    switch (req->cmd) {
+    case IOS::Cmd::OPEN:
+        ReqOpen(req);
+        break;
+    case IOS::Cmd::CLOSE:
+        ReqClose(req);
+        break;
+    case IOS::Cmd::IOCTL:
+        ReqIoctl(req);
+        break;
+    case IOS::Cmd::IOCTLV:
+        ReqIoctlv(req);
+        break;
+
+    // Reply from forwarded commands
+    case IOS::Cmd::REPLY:
+        req->Reply(req->result);
+        break;
+
+    default:
+        PRINT(IOS_EmuDI, ERROR, "Received unhandled command: %d", req->cmd);
+        // Real DI just... does not reply to unknown commands?
+        break;
+    }
+}
+
+static s32 ThreadEntry([[maybe_unused]] void* arg)
+{
+    PRINT(IOS_EmuDI, INFO, "Starting DI...");
+    PRINT(IOS_EmuDI, INFO, "EmuDI thread ID: %d", IOS_GetThreadId());
+
+    disc = new VirtualDiscISO("0:/xaa", "0:/xab");
+    useVirtualDisc = true;
+
+    DiStarted = true;
+    while (1) {
+        IOS::Request* req;
+        s32 ret = IOS_ReceiveMessage(DiMsgQueue, (u32*) &req, 0);
+        assert(ret == IOS::IOSError::OK);
+
+        HandleRequest(req);
+    }
+    return 0;
+}
+
+void Init()
+{
+    s32 ret = IOS_CreateMessageQueue(__diMsgData, 8);
+    assert(ret >= 0);
+    DiMsgQueue = ret;
+
+    ret = IOS_RegisterResourceManager("~dev/di", DiMsgQueue);
+    assert(ret == IOS::IOSError::OK);
+
+    new Thread(ThreadEntry, nullptr, nullptr, 0x2000, 80);
+}
+
+} // namespace DeviceEmuDI
