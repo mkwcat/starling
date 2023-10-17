@@ -7,8 +7,8 @@
 
 #include <Types.h>
 #include <Util.h>
+#include <bit>
 #include <cassert>
-#include <type_traits>
 
 #ifdef TARGET_IOS
 #  include <Syscalls.h>
@@ -20,104 +20,106 @@
 #include <new>
 
 #ifdef TARGET_IOS
+
+// IOS MEM1 base. For some reason they thought it was a good idea to leave this
+// at 0. C++ doesn't like this in some places I think.
 #  define MEM1_BASE ((void*) 0x00000000)
+
 #else
+
+// PPC cached MEM1 base
 #  define MEM1_BASE ((void*) 0x80000000)
+
+#  define MEM_CACHED_BASE ((void*) 0x80000000)
+#  define MEM_UNCACHED_BASE ((void*) 0xC0000000)
+
 #endif
 
+template <class From>
+concept QueueConvertible =
+    requires { std::bit_cast<u32>(std::declval<From>()); };
+
 #ifdef TARGET_IOS
+
 /* IOS implementation */
-template <typename T>
+template <typename T, u32 TCount>
 class IOS_Queue
 {
 public:
     IOS_Queue(const IOS_Queue& from) = delete;
 
-    explicit IOS_Queue(u32 count = 8)
+    explicit IOS_Queue()
     {
-        this->m_base = new u32[count];
-        const s32 ret = IOS_CreateMessageQueue(this->m_base, count);
-        this->m_queue = ret;
+        const s32 ret = IOS_CreateMessageQueue(m_base, TCount);
+        m_id = ret;
         assert(ret >= 0);
     }
 
     ~IOS_Queue()
     {
-        if (std::is_class_v<T>) {
+        if (!QueueConvertible<T>) {
             T* msg = nullptr;
-            while (IOS_ReceiveMessage(this->m_queue, (u32*) (&msg), 1) ==
-                   IOS_ERROR_OK) {
+            while (IOS_ReceiveMessage(m_id, (u32*) (&msg), 1) == IOS_ERROR_OK) {
                 delete msg;
             }
         }
 
-        const s32 ret = IOS_DestroyMessageQueue(this->m_queue);
-        assert(ret == IOS_ERROR_OK);
-        delete[] this->m_base;
-    }
-
-    template <
-        typename T1 = T,
-        typename std::enable_if<std::is_class_v<T1>, bool>::type = true>
-    void Send(T msg)
-    {
-        const s32 ret = IOS_SendMessage(
-            this->m_queue, reinterpret_cast<u32>(new T(msg)), 0
-        );
+        const s32 ret = IOS_DestroyMessageQueue(m_id);
         assert(ret == IOS_ERROR_OK);
     }
 
-    template <
-        typename T1 = T,
-        typename std::enable_if<!std::is_class_v<T1>, bool>::type = true>
-    void Send(T msg)
+    void Send(const T& msg)
+        requires(!QueueConvertible<T>)
     {
         const s32 ret =
-            IOS_SendMessage(this->m_queue, reinterpret_cast<u32>(msg), 0);
+            IOS_SendMessage(m_id, reinterpret_cast<u32>(new T(msg)), 0);
         assert(ret == IOS_ERROR_OK);
     }
 
-    template <
-        typename T1 = T,
-        typename std::enable_if<std::is_class_v<T1>, bool>::type = true>
+    void Send(T msg)
+        requires(QueueConvertible<T>)
+    {
+        const s32 ret = IOS_SendMessage(m_id, std::bit_cast<u32>(msg), 0);
+        assert(ret == IOS_ERROR_OK);
+    }
+
     T Receive()
+        requires(!QueueConvertible<T>)
     {
         u32 msgV;
-        const s32 ret = IOS_ReceiveMessage(this->m_queue, &msgV, 0);
+        const s32 ret = IOS_ReceiveMessage(m_id, &msgV, 0);
         assert(ret == IOS_ERROR_OK);
 
+        assert(msgV != 0);
         T* ptr = reinterpret_cast<T*>(msgV);
-        assert(ptr != nullptr);
 
         T out = *ptr;
         delete ptr;
         return out;
     }
 
-    template <
-        typename T1 = T,
-        typename std::enable_if<!std::is_class_v<T1>, bool>::type = true>
     T Receive()
+        requires(QueueConvertible<T>)
     {
         u32 msgV;
-        const s32 ret = IOS_ReceiveMessage(this->m_queue, &msgV, 0);
+        const s32 ret = IOS_ReceiveMessage(m_id, &msgV, 0);
         assert(ret == IOS_ERROR_OK);
 
-        return reinterpret_cast<T>(msgV);
+        return std::bit_cast<T>(msgV);
     }
 
     s32 GetID() const
     {
-        return this->m_queue;
+        return m_id;
     }
 
 private:
-    u32* m_base;
-    s32 m_queue;
+    u32 m_base[TCount] = {};
+    s32 m_id = IOS_ERROR_INVALID;
 };
 
-template <typename T>
-using Queue = IOS_Queue<T>;
+template <typename T, u32 TCount = 8>
+using Queue = IOS_Queue<T, TCount>;
 
 #else
 
@@ -134,7 +136,6 @@ public:
     IOS_Mutex(const IOS_Mutex&) = delete;
 
     IOS_Mutex()
-      : m_queue(1)
     {
         m_queue.Send(0);
     }
@@ -150,7 +151,7 @@ public:
     }
 
 private:
-    Queue<u32> m_queue;
+    Queue<u32, 1> m_queue;
 };
 
 using Mutex = IOS_Mutex;

@@ -506,7 +506,7 @@ s32 ThreadEntry([[maybe_unused]] void* arg)
     PRINT(IOS_EmuES, INFO, "Starting ES...");
     PRINT(IOS_EmuES, INFO, "EmuES thread ID: %d", IOS_GetThreadId());
 
-    Queue<IOS::Request*> queue(8);
+    Queue<IOS::Request*> queue;
     s32 ret = IOS_RegisterResourceManager("~dev/es", queue.GetID());
     assert(ret == IOS::IOSError::OK);
 

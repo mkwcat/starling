@@ -1865,7 +1865,7 @@ static s32 Frontend_HandleRequest(IOS::Request* req)
     return ret;
 }
 
-static Queue<IOS::Request*> s_ipcQueue(8);
+static Queue<IOS::Request*> s_ipcQueue;
 
 static s32 ThreadEntry([[maybe_unused]] void* arg)
 {

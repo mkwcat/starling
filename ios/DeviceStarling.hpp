@@ -56,7 +56,7 @@ protected:
     };
 
     Queue<IOS::Request*> m_ipcQueue;
-    Queue<IOS::Request*> m_responseQueue{1};
+    Queue<IOS::Request*, 1> m_responseQueue;
     Queue<InternalCommandData> m_commandQueue;
 
     bool m_opened = false;
