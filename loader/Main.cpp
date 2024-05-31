@@ -367,14 +367,18 @@ void Launch()
     argv[7] = "--riivo-xml=";
     argv[8] = "--riivo-xml";
 
-    PRINT(System, INFO, "Start the command line");
+    PRINT(System, INFO, "Start the command line\n");
 
-    Arguments::ParseCommandLine(argc, argv);
+    auto arguments = Arguments::ParseCommandLine(argc, argv);
 
-    PRINT(System, INFO, "Done with command line");
+    PRINT(System, INFO, "Done with command line\n");
 
-    return;
+    if (arguments.IsStartReady()) {
+        PRINT(System, INFO, "Start the game");
+        arguments.Launch();
+    }
 
+    // Not enough arguments to start a game directly
     Console::Print("I[Loader] > Booting into Channel\n");
 
     Console::Print("I[Loader] Reading Rgnsel TMD... ");

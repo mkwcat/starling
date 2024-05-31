@@ -8,6 +8,8 @@
 #include <AddressMap.h>
 #include <Types.h>
 
+typedef u8 DiskID;
+
 namespace DeviceStarlingTypes
 {
 
@@ -32,7 +34,7 @@ using Ioctl = Command;
 constexpr u32 MAX_DISK_COUNT = 9;
 
 struct CommandData {
-    static CommandData FromDiskID(u32 diskId)
+    static CommandData FromDiskID(DiskID diskId)
     {
         CommandData data;
         data.disk.diskId = diskId;
