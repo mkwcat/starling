@@ -5,6 +5,7 @@
 
 #include "Kernel.hpp"
 #include "Config.hpp"
+#include "DeviceEmuFS.hpp"
 #include "Syscalls.h"
 #include "System.hpp"
 #include <IOS.hpp>
@@ -51,7 +52,7 @@ extern "C" char* IOSOpenStrncpy(char* dest, const char* src, u32 num, s32 pid)
 
     if (strncmp(src, "/dev/", sizeof("/dev/") - 1) != 0) {
         // ISFS path
-        if (Config::s_instance->IsISFSPathReplaced(src)) {
+        if (DeviceEmuFS::IsPathReplaced(src)) {
             dest[0] = '$';
         }
 

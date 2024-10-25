@@ -2,7 +2,6 @@
 
 #include "PatchUnit.hpp"
 
-
 class PatchUnitRiivolution : public PatchUnit
 {
 public:
@@ -38,10 +37,12 @@ public:
     //     Section* m_sections;
     // } m_wiidisc;
 
-
     PatchUnitRiivolution(DiskID diskId, const char* path, const char* xml)
-        : PatchUnit()
+      : PatchUnit(diskId)
     {
+        (void) path;
+        (void) xml;
+
         m_type = Type::RIIVOLUTION;
     }
 };

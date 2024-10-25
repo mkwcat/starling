@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DeviceStarlingTypes.h>
+#include <DeviceStarlingTypes.hpp>
 #include <Types.h>
 #include <cstring>
 

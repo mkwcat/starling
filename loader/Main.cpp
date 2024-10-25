@@ -369,7 +369,7 @@ void Launch()
 
     PRINT(System, INFO, "Start the command line\n");
 
-    auto arguments = Arguments::ParseCommandLine(argc, argv);
+    Arguments arguments(argc, argv);
 
     PRINT(System, INFO, "Done with command line\n");
 

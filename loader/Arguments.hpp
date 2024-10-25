@@ -57,8 +57,8 @@ public:
      * Handle the command-line arguments. Set option to OPT_UNKNOWN to handle
      * all option types.
      */
-    void Handle(
-        bool printErrors, ArgOption handleOption,
+    bool Handle(
+        bool printErrors, ArgOption handleOption = ArgOption::OPT_UNKNOWN,
         bool (*callback)(ArgOption option, const char* value, void* userData) =
             nullptr,
         void* userData = nullptr
@@ -71,7 +71,7 @@ public:
 
     /**
      * Launch the game using the provided arguments.
-    */
+     */
     void Launch();
 
 private:

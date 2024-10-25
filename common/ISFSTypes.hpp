@@ -30,7 +30,9 @@ enum {
 
 constexpr char SEPARATOR_CHAR = '/';
 
+constexpr u32 MAX_PATH_DEPTH = 8;
 constexpr u32 MAX_PATH_LENGTH = 64; // Including the NULL terminator
+constexpr u32 MAX_NAME_LENGTH = 12;
 constexpr u32 EMUFS_MAX_PATH_LENGTH = 2048;
 
 constexpr s32 MAX_OPEN_COUNT = 15;
@@ -49,9 +51,9 @@ enum class ISFSIoctl {
     GET_USAGE = 0xC,
     SHUTDOWN = 0xD,
 
-    DIRECT_OPEN = 0x1000,
-    DIRECT_DIR_OPEN = 0x1001,
-    DIRECT_DIR_NEXT = 0x1002,
+    EX_OPEN = 0x1000,
+    EX_DIR_OPEN = 0x1001,
+    EX_DIR_NEXT = 0x1002,
 };
 
 struct RenameBlock {
@@ -62,7 +64,7 @@ struct RenameBlock {
 struct AttrBlock {
     // UID, title specific
     u32 ownerId;
-    // GID, the "maker", for example 01 in RMCE01.
+    // GID, the "maker", for example 01 (0x3031) in RMCE01.
     u16 groupId;
     char path[MAX_PATH_LENGTH];
     // Access flags (like IOS::Mode). If the caller's identifiers match UID or

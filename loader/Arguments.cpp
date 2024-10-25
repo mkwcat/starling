@@ -134,7 +134,7 @@ bool Arguments::Handle(
             continue;
         }
 
-        if (!callback(option, value)) {
+        if (!callback(option, value, userData)) {
             if (printErrors) {
                 PRINT(
                     Patcher, WARN, "Failed to handle argument '%.*s'",
@@ -157,7 +157,8 @@ bool Arguments::HasOption(ArgOption option) const
 
     Handle(
         false, ArgOption::OPT_UNKNOWN,
-        [](ArgOption option, const char* value, void* userData) -> bool {
+        [](ArgOption option, [[maybe_unused]] const char* value,
+           void* userData) -> bool {
             HasOptionData* hasOptionData =
                 static_cast<HasOptionData*>(userData);
 
@@ -199,7 +200,8 @@ bool Arguments::IsStartReady() const
 
     return Handle(
         false, ArgOption::OPT_UNKNOWN,
-        [](ArgOption option, const char* value, void* userData) -> bool {
+        [](ArgOption option, [[maybe_unused]] const char* value,
+           void* userData) -> bool {
             ReadyData* readyData = static_cast<ReadyData*>(userData);
 
             switch (option) {
@@ -226,7 +228,7 @@ bool Arguments::IsStartReady() const
 void Arguments::Launch()
 {
     if (m_argc == 0 || m_argv == nullptr) {
-        return false;
+        return;
     }
 
     struct LaunchData {
@@ -234,11 +236,12 @@ void Arguments::Launch()
         bool hasRiivoXml;
         bool hasPatchId;
         const char* launchPath;
-    } launchData = {nullptr};
+    } launchData = {};
 
     Handle(
         false, ArgOption::OPT_UNKNOWN,
-        [](ArgOption option, const char* value, void* userData) -> bool {
+        [](ArgOption option, [[maybe_unused]] const char* value,
+           void* userData) -> bool {
             LaunchData* launchData = static_cast<LaunchData*>(userData);
 
             switch (option) {
@@ -276,20 +279,29 @@ void Arguments::Launch()
         if (launchData.hasRiivoXml) {
             Handle(
                 false, ArgOption::OPT_RIIVO_XML,
-                [&patchManager](ArgOption option, const char* value) -> bool {
+                [](ArgOption option, const char* value,
+                   void* userData) -> bool {
+                    if (option != ArgOption::OPT_RIIVO_XML) {
+                        return true;
+                    }
+
+                    PatchManager& patchManager =
+                        *static_cast<PatchManager*>(userData);
+
                     if (!patchManager.LoadRiivolutionXML(value)) {
                         PRINT(
                             Patcher, ERROR,
                             "Failed to load Riivolution XML path '%s'", value
                         );
-                        return false;
                     }
+
+                    return true;
                 }
-            )
+            );
         } else {
             // No Riivolution XML path specified, load the default paths
-            patchManager.LoadRiivolutionXML("/riivolution");
-            patchManager.LoadRiivolutionXML("/apps/riivolution");
+            patchManager.LoadRiivolutionXML("/mnt/*/riivolution");
+            patchManager.LoadRiivolutionXML("/mnt/*/apps/riivolution");
         }
     }
 }

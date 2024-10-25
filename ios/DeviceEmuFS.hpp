@@ -13,4 +13,9 @@ namespace DeviceEmuFS
 
 void Init();
 
-}
+/**
+ * Checks if a path is redirected somewhere else by the frontend.
+ */
+bool IsPathReplaced(const char* isfsPath);
+
+} // namespace DeviceEmuFS
