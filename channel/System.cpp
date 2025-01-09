@@ -598,6 +598,7 @@ GXRenderModeObj System::GetRenderMode()
     default:
         if (dtv && progressive) {
             // NTSC 480p
+            gLoMem.threadInfo.videoMode = VI_NTSC;
             rmode = {
                 .tvMode = (VI_NTSC << 2) | 2,
                 .fbWidth = 608,
@@ -617,6 +618,7 @@ GXRenderModeObj System::GetRenderMode()
             break;
         } else {
             // NTSC 480i
+            gLoMem.threadInfo.videoMode = VI_NTSC;
             rmode = {
                 .tvMode = VI_NTSC << 2,
                 .fbWidth = 608,
@@ -640,6 +642,7 @@ GXRenderModeObj System::GetRenderMode()
     case VI_EURGB60:
         if (dtv && progressive) {
             // PAL60 progressive
+            gLoMem.threadInfo.videoMode = VI_EURGB60;
             rmode = {
                 .tvMode = (VI_EURGB60 << 2) | 2,
                 .fbWidth = 608,
@@ -661,6 +664,7 @@ GXRenderModeObj System::GetRenderMode()
 
         if (pal60) {
             // PAL60 interlaced
+            gLoMem.threadInfo.videoMode = VI_EURGB60;
             rmode = {
                 .tvMode = VI_EURGB60 << 2,
                 .fbWidth = 608,
@@ -680,6 +684,7 @@ GXRenderModeObj System::GetRenderMode()
             break;
         } else {
             // PAL50 interlaced
+            gLoMem.threadInfo.videoMode = VI_PAL;
             rmode = {
                 .tvMode = VI_PAL << 2,
                 .fbWidth = 608,
@@ -701,6 +706,7 @@ GXRenderModeObj System::GetRenderMode()
 
     case VI_MPAL:
         if (dtv && progressive) {
+            gLoMem.threadInfo.videoMode = VI_MPAL;
             // PAL-M 480p
             rmode = {
                 .tvMode = (VI_MPAL << 2) | 2,
@@ -720,6 +726,7 @@ GXRenderModeObj System::GetRenderMode()
             };
             break;
         } else {
+            gLoMem.threadInfo.videoMode = VI_MPAL;
             // PAL-M 480i
             rmode = {
                 .tvMode = VI_MPAL << 2,
