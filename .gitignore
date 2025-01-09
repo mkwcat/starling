@@ -33,5 +33,11 @@ build
 .vs
 .vscode
 
+# OS generated files
+.DS_Store
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
 # Python
 __pycache__
