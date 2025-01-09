@@ -5,6 +5,8 @@
 #include <Import_GX.h>
 #include <Util.h>
 
+#define IMPORT_RVL_OS 1
+
 EXTERN_C_START
 
 typedef s64 OSTime;
@@ -293,15 +295,6 @@ void AXInit();
 /*
  * VI library
  */
-
-enum {
-    VI_NTSC = 0,
-    VI_PAL = 1,
-    VI_MPAL = 2,
-    VI_DEBUG = 3,
-    VI_DEBUG_PAL = 4,
-    VI_EURGB60 = 5,
-};
 
 IMPORT(0x800783BC)
 void VIInit();

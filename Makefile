@@ -1,6 +1,23 @@
 # Clear the implicit built in rules
 .SUFFIXES:
 
+# If DEVKITPPC or DEVKITARM is not set, try and set them using DEVKITPRO
+ifeq ($(strip $(DEVKITPPC)),)
+ifneq ($(strip $(DEVKITPPC)),)
+DEVKITPPC := $(DEVKITPRO)/devkitPPC
+else
+$(error "Please set DEVKITPPC in your environment. export DEVKITPPC=<path to>devkitPPC")
+endif
+endif
+
+ifeq ($(strip $(DEVKITARM)),)
+ifneq ($(strip $(DEVKITPRO)),)
+DEVKITARM := $(DEVKITPRO)/devkitARM
+else
+$(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
+endif
+endif
+
 # Add .d to Make's recognized suffixes.
 SUFFIXES += .d
 
@@ -14,7 +31,6 @@ IOS_SOURCES      := ios
 IOS_INCLUDES     := -Iios -Icommon
 COMMON_SOURCES   := common
 ASSETS           := $(wildcard assets/*)
-BIN              := bin
 
 # Target module names
 TARGET_IOS_MODULE  := $(BUILD)/ios_module
@@ -27,14 +43,14 @@ DATA_LOADER        := $(BUILD)/data/loader.arc.lzma
 DATA_CHANNEL       := $(BUILD)/data/channel.arc
 
 # Create build directories
-DUMMY         != mkdir -p $(BIN) $(BUILD) \
-                 $(BUILD)/$(LOADER_SOURCES) \
-                 $(BUILD)/$(CHANNEL_SOURCES) \
+DUMMY         := $(shell mkdir -p $(BUILD) \
+         $(BUILD)/$(LOADER_SOURCES) \
+         $(BUILD)/$(CHANNEL_SOURCES) \
 		 $(BUILD)/$(IOS_SOURCES) \
 		 $(BUILD)/$(COMMON_SOURCES) \
 		 $(DATA_LOADER).d \
 		 $(DATA_CHANNEL).d \
-		 $(foreach dir, $(ASSETS), $(DATA_CHANNEL).d/$(dir))
+		 $(foreach dir, $(ASSETS), $(DATA_CHANNEL).d/$(dir)))
 
 # Compiler definitions
 PPC_PREFIX       := $(DEVKITPPC)/bin/powerpc-eabi-
@@ -107,8 +123,8 @@ PPC_DEFS := -DTARGET_PPC -Wno-attribute-alias -Wno-missing-attributes
 default: $(TARGET_PPC).dol
 
 clean:
-	@echo Cleaning: $(BIN) $(BUILD)
-	@rm -rf $(BIN) $(BUILD)
+	@echo Cleaning: $(BUILD)
+	@rm -rf $(BUILD)
 
 -include $(DEPS)
 

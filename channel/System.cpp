@@ -11,7 +11,7 @@
 #include "SceneManager.hpp"
 #include <AddressMap.h>
 #include <Console.hpp>
-#include <Import_Rgnsel.hpp>
+#include <LoMem.hpp>
 #include <Log.hpp>
 
 namespace Channel
@@ -38,6 +38,36 @@ static u8 s_aspectRatio = AR_16_9;
  * System render mode.
  */
 GXRenderModeObj System::s_rmode = {};
+
+/**
+ * Wii Remote controller status.
+ */
+KPADStatus System::s_kpadStatus[4][16];
+
+/**
+ * KPADStatus result count.
+ */
+s32 System::s_kpadStatusCount[4];
+
+/**
+ * Wii Remote pointer cursors.
+ */
+Rgnsel::Pointer System::s_pointer;
+
+/**
+ * Wii Remote pointer missed frames.
+ */
+u8 System::s_pointerMissFrame[4];
+
+/**
+ * Wii Remote pointer position.
+ */
+nw4r::math::VEC2 System::s_pointerPos[4];
+
+/**
+ * Wii Remote pointer valid.
+ */
+bool System::s_pointerValid[4];
 
 static bool s_debugVI = false;
 
@@ -72,6 +102,8 @@ void System::Init()
     s_iSceneManager = new SceneManager();
 
     s_iEventManager->Start();
+
+    s_pointer.Init(s_iResourceManager->GetChannelArchive());
 }
 
 struct GlobalPosition {
@@ -174,67 +206,13 @@ static GlobalPosition GetGlobalPanePos(nw4r::lyt::Pane* pane)
     };
 }
 
-static bool s_pointerValid = false;
-static nw4r::math::VEC2 s_pointerPosition;
-
 void System::Run()
 {
-    nw4r::lyt::ArcResourceAccessor* resAsr =
-        s_iResourceManager->GetChannelArchive();
-
-    Rgnsel::Pointer m_pointer;
-    m_pointer.Init(resAsr);
-
     bool firstFrame = true;
 
-    u8 pointerMissFrame[4] = {0, 0, 0, 0};
-
     while (true) {
-        KPADStatus status;
-        s32 rc = KPADRead(0, &status, 1);
-        if (rc >= 1 && status.posValid >= 1) {
-            pointerMissFrame[0] = 3;
-
-            KPADVec2D projPos;
-            auto rect = GetProjectionRect();
-            KPADGetProjectionPos(&projPos, &status.pos, rect.f, 1.10132);
-
-            if (s_aspectRatio == AR_16_9) {
-                projPos.x *= 1.15;
-                projPos.y *= 1.15;
-            }
-
-            if (projPos.x < rect.left - 100) {
-                projPos.x = rect.left - 100;
-            }
-
-            if (projPos.x > rect.right + 100) {
-                projPos.x = rect.right + 100;
-            }
-
-            if (projPos.y < rect.bottom - 100) {
-                projPos.y = rect.bottom - 100;
-            }
-
-            if (projPos.y > rect.top + 100) {
-                projPos.y = rect.top + 100;
-            }
-
-            m_pointer.SetEnabled(0);
-            m_pointer.Calc(
-                0, &s_drawInfo, -projPos.x, projPos.y,
-                nw4r::math::Atan2FIdx(-status.angle.y, status.angle.x) * 1.40625
-            );
-
-            s_pointerValid = true;
-            s_pointerPosition = nw4r::math::VEC2(-projPos.x, projPos.y);
-        } else {
-            if (pointerMissFrame[0] == 0) {
-                m_pointer.SetDisabled(0);
-                s_pointerValid = false;
-            } else {
-                pointerMissFrame[0]--;
-            }
+        for (int i = 0; i < 4; i++) {
+            ReadWiiRemoteStatus(i);
         }
 
         GXInvalidateVtxCache();
@@ -260,13 +238,15 @@ void System::Run()
         // Handles rendering the entire UI
         s_iSceneManager->Tick();
 
-        m_pointer.Draw(&s_drawInfo);
+        s_pointer.Draw(&s_drawInfo);
 
-        if (rc >= 1 && (status.trigger & WPAD_BUTTON_1)) {
+        if (s_kpadStatusCount[0] >= 1 &&
+            (s_kpadStatus[0][0].trigger & WPAD_BUTTON_1)) {
             ConfigureVideo(true);
         }
 
-        if (rc >= 1 && (status.release & WPAD_BUTTON_1)) {
+        if (s_kpadStatusCount[0] >= 1 &&
+            (s_kpadStatus[0][0].release & WPAD_BUTTON_1)) {
             ConfigureVideo(false);
         }
 
@@ -298,7 +278,8 @@ void System::Run()
         // Swap framebuffer
         s_currXFB = s_currXFB == s_XFBs[0] ? s_XFBs[1] : s_XFBs[0];
 
-        if (rc >= 1 && (status.trigger & WPAD_BUTTON_HOME)) {
+        if (s_kpadStatusCount[0] >= 1 &&
+            (s_kpadStatus[0][0].trigger & WPAD_BUTTON_HOME)) {
             break;
         }
     }
@@ -311,6 +292,69 @@ void System::Shutdown()
 {
     delete s_iEventManager;
     s_iEventManager = nullptr;
+}
+
+/**
+ * Read Wii Remote status for channel.
+ */
+void System::ReadWiiRemoteStatus(int channel)
+{
+    s_kpadStatusCount[channel] = KPADRead(
+        channel, s_kpadStatus[channel], std::size(s_kpadStatus[channel])
+    );
+    if (s_kpadStatusCount[channel] >= 1 &&
+        s_kpadStatus[channel][0].posValid >= 1) {
+        s_pointerMissFrame[channel] = 3;
+
+        KPADVec2D projPos;
+        auto rect = GetProjectionRect();
+        KPADGetProjectionPos(
+            &projPos, &s_kpadStatus[channel][0].pos, rect.f, 1.10132
+        );
+
+        if (s_aspectRatio == AR_16_9) {
+            projPos.x *= 1.15;
+            projPos.y *= 1.15;
+        }
+
+        if (projPos.x < rect.left - 100) {
+            projPos.x = rect.left - 100;
+        }
+
+        if (projPos.x > rect.right + 100) {
+            projPos.x = rect.right + 100;
+        }
+
+        if (projPos.y < rect.bottom - 100) {
+            projPos.y = rect.bottom - 100;
+        }
+
+        if (projPos.y > rect.top + 100) {
+            projPos.y = rect.top + 100;
+        }
+
+        s_pointer.SetEnabled(channel);
+        s_pointer.Calc(
+            channel, &s_drawInfo, -projPos.x, projPos.y,
+            nw4r::math::Atan2FIdx(
+                -s_kpadStatus[channel][0].angle.y,
+                s_kpadStatus[channel][0].angle.x
+            ) * 1.40625
+        );
+
+        s_pointerValid[channel] = true;
+        s_pointerPos[channel] = nw4r::math::VEC2(-projPos.x, projPos.y);
+
+        return;
+    }
+
+    // Failed, disable pointer
+    if (s_pointerMissFrame[channel] == 0) {
+        s_pointer.SetDisabled(channel);
+        s_pointerValid[channel] = false;
+    } else {
+        s_pointerMissFrame[channel]--;
+    }
 }
 
 /**
@@ -368,10 +412,10 @@ nw4r::ut::Rect System::GetProjectionRect()
 /**
  * Get the current pointer position.
  */
-std::optional<nw4r::math::VEC2> System::GetPointerPosition()
+std::optional<nw4r::math::VEC2> System::GetPointerPosition(int channel)
 {
-    if (s_pointerValid) {
-        return s_pointerPosition;
+    if (s_pointerValid[channel]) {
+        return s_pointerPos[channel];
     }
 
     return {};

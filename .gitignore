@@ -1,5 +1,37 @@
+# Build directories
 bin
 build
-__pycache__
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.o
+
+# Precompiled Headers
+*.gch
+
+# Compiled Dynamic libraries
+*.so
+*.rel
+*.rso
+
+# Compiled Static libraries
+*.a
+*.dylib
+
+# Executables
+*.elf
+*.dol
+*.wad
+
+# Symbol maps
+*.map
+*.smap
+
+# Editor files
 .vs
 .vscode
+
+# Python
+__pycache__

@@ -122,11 +122,11 @@ EmuIoctl(DVDCommand* block, DI::DIIoctl cmd, void* out, u32 outLen)
         DI::DiskID diskID;
 
         if (!disc->ReadDiskID(&diskID)) {
-            PRINT(IOS_EmuDI, INFO, "Read DiskID error", diskID.gameID);
+            PRINT(IOS_EmuDI, INFO, "Read DiskID error");
             return DI::DIError::Drive;
         }
 
-        PRINT(IOS_EmuDI, INFO, "Read DiskID: %.6s", diskID.gameID);
+        PRINT(IOS_EmuDI, INFO, "Read DiskID: %.6s", diskID.gameCode);
         return WriteOutputStruct(out, outLen, &diskID);
     }
 

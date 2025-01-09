@@ -89,15 +89,61 @@ public:
     };
 
     struct DiskID {
-        char gameID[4];
-        u16 groupID;
-        u8 discNum;
-        u8 discVer;
-        u8 discStreamFlag;
-        u8 discStreamSize;
-        u8 pad[0xE];
-        u32 discMagic;
-        u32 discMagicGC;
+        /**
+         * Game Code, e.g. "RSPE" for Wii Sports.
+         */
+        /* 0x00 */ char gameCode[4];
+
+        /**
+         * Maker (Group) Code, typically in ASCII. For example, 0x3031 (01) for
+         * first-party Nintendo-published games.
+         */
+        /* 0x04 */ u16 makerCode;
+
+        /**
+         * Disc Number, for multi-disc games.
+         */
+        /* 0x06 */ u8 discNumber;
+
+        /**
+         * Disc Version, for games with multiple revisions.
+         */
+        /* 0x07 */ u8 discVersion;
+
+        /**
+         * Disc Streaming Flag.
+         */
+        /* 0x08 */ u8 discStreamFlag;
+
+        /**
+         * Disc Streaming Buffer Size.
+         */
+        /* 0x09 */ u8 discStreamSize;
+
+        /**
+         * Padding.
+         */
+        /* 0x0A */ u8 pad[0x18 - 0x0A];
+
+        enum class RVLMagic : u32 {
+            False = 0,
+            True = 0x5D1C9EA3,
+        };
+
+        enum class DOLMagic : u32 {
+            False = 0,
+            True = 0xC2339F3D,
+        };
+
+        /**
+         * Disc Magic Number to designate this as a Wii disc.
+         */
+        RVLMagic discMagicRvl;
+
+        /**
+         * Disc Magic Number to designate this as a GameCube disc.
+         */
+        DOLMagic discMagicDol;
     };
 
     struct DICommand {

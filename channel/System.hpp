@@ -7,6 +7,7 @@
 
 #include <Import_NW4R.hpp>
 #include <Import_RVL_OS.h>
+#include <Import_Rgnsel.hpp>
 #include <Types.h>
 #include <optional>
 
@@ -27,6 +28,13 @@ public:
     static void Run();
     static void Shutdown();
 
+private:
+    /**
+     * Read Wii Remote status for channel.
+     */
+    static void ReadWiiRemoteStatus(int channel);
+
+public:
     /**
      * Check if we're running on Dolphin Emulator.
      */
@@ -65,7 +73,7 @@ public:
     /**
      * Get the current pointer position.
      */
-    static std::optional<nw4r::math::VEC2> GetPointerPosition();
+    static std::optional<nw4r::math::VEC2> GetPointerPosition(int channel = 0);
 
     /**
      * Get the NW4R Layout DrawInfo struct.
@@ -119,6 +127,37 @@ private:
      * System render mode.
      */
     static GXRenderModeObj s_rmode;
+
+    /**
+     * Wii Remote controller status.
+     */
+    static KPADStatus s_kpadStatus[4][16];
+
+    /**
+     * KPADStatus result count.
+     */
+    static s32 s_kpadStatusCount[4];
+
+    /**
+     * Wii Remote pointer cursors.
+     */
+    static Rgnsel::Pointer s_pointer;
+
+    /**
+     * Wii Remote pointer missed frames.
+     */
+    static u8 s_pointerMissFrame[4];
+
+    /**
+     * Wii Remote pointer position.
+     */
+    static nw4r::math::VEC2 s_pointerPos[4];
+
+    /**
+     * Wii Remote pointer valid.
+     */
+    static bool s_pointerValid[4];
+
 };
 
 } // namespace Channel

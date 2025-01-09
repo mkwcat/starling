@@ -41,6 +41,21 @@ struct PartitionOffsets {
 
 extern "C" void RunDOL(DOL* dol);
 
+static void ShutdownOS()
+{
+    __OSUnRegisterStateEvent();
+
+    OSDisableScheduler();
+    __OSShutdownDevices(6);
+    OSEnableScheduler();
+
+    OSDisableInterrupts();
+
+    for (s32 i = 0; i < 32; i++) {
+        IOS_Close(i);
+    }
+}
+
 void Apploader::Load()
 {
     DI di("/dev/di");
@@ -197,9 +212,10 @@ void Apploader::Load()
         return;
     }
 
-    os0->info.fst = reinterpret_cast<void*>(fstDest);
-
-    retDi = di.Read(os0->info.fst, AlignUp(fstSize, 32), hdrOffsets.fstOffset);
+    gLoMem.systemInfo.fstStart = reinterpret_cast<void*>(fstDest);
+    retDi = di.Read(
+        gLoMem.systemInfo.fstStart, AlignUp(fstSize, 32), hdrOffsets.fstOffset
+    );
     if (retDi != DI::DIError::OK) {
         PRINT(
             BS2, ERROR, "Failed to read FST: 0x%X (%s)", retDi,
@@ -209,8 +225,9 @@ void Apploader::Load()
     }
 
     // Read BI2
-    os0->threads.bi2 = reinterpret_cast<BI2*>(fstDest - 0x2000);
-    retDi = di.Read(os0->threads.bi2, 0x2000, 0x440);
+    gLoMem.threadInfo.bi2 =
+        reinterpret_cast<LoMem::ThreadInfo::BI2*>(fstDest - 0x2000);
+    retDi = di.Read(gLoMem.threadInfo.bi2, 0x2000, 0x440);
     if (retDi != DI::DIError::OK) {
         PRINT(
             BS2, ERROR, "Failed to read BI2: 0x%X (%s)", retDi,
@@ -219,37 +236,28 @@ void Apploader::Load()
         return;
     }
 
-    if (os0->threads.bi2->dualLayerValue == 0x7ED40000) {
-        os1->dual_layer_value = 0x81;
+    if (gLoMem.threadInfo.bi2->dualLayerValue == 0x7ED40000) {
+        gLoMem.osGlobals.dualLayerValue =
+            LoMem::OSGlobals::DualLayerValue::DualLayer;
     } else {
-        os1->dual_layer_value = 0x80;
+        gLoMem.osGlobals.dualLayerValue =
+            LoMem::OSGlobals::DualLayerValue::SingleLayer;
     }
 
-    os1->fst = os0->info.fst;
-    os1->usable_mem2_start = 0x90000800;
+    gLoMem.osGlobals.mem1ArenaEnd = fstDest;
+    gLoMem.osGlobals.mem2UsableStart = 0x90000800;
 
-    __OSUnRegisterStateEvent();
+    ShutdownOS();
 
-    OSDisableScheduler();
-    __OSShutdownDevices(6);
-    OSEnableScheduler();
+    gLoMem.threadInfo.debugMonitorAddress = 0x81800000;
+    gLoMem.threadInfo.simulatedMemorySize = 0x01800000;
+    gLoMem.threadInfo.busSpeed = 0x0E7BE2C0;
+    gLoMem.threadInfo.cpuSpeed = 0x2B73A840;
 
-    OSDisableInterrupts();
+    gLoMem.osGlobals.iosVersion = gLoMem.osGlobals.iosMinimumVersion;
+    std::memcpy(gLoMem.osGlobals.gameCode, gLoMem.diskId.gameCode, 4);
 
-    for (u32 i = 0; i < 32; i++) {
-        IOS_Close(i);
-    }
-
-    os0->threads.debug_monitor_location = (void*) 0x81800000;
-    os0->threads.simulated_memory_size = 0x01800000;
-    os0->threads.bus_speed = 0x0E7BE2C0;
-    os0->threads.cpu_speed = 0x2B73A840;
-
-    os1->ios_number = os1->expected_ios_number;
-    os1->ios_revision = os1->expected_ios_revision;
-    memcpy(os1->application_name, os0->disc.gamename, 4);
-
-    os0->info.arena_high = 0;
+    gLoMem.systemInfo.arenaHigh = 0;
 
     RunDOL(dol);
 
