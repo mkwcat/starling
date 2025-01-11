@@ -52,8 +52,9 @@ void abort()
     __builtin_unreachable();
 }
 
-extern "C" {
-void AssertFail(const char* file, int line, u32 lr, const char* expr)
+void __assert_func(
+    const char* file, int line, const char* func, const char* expr
+)
 {
     char report[256];
     snprintf(
@@ -61,8 +62,10 @@ void AssertFail(const char* file, int line, u32 lr, const char* expr)
         "Expression: %s\n"
         "File: %s\n"
         "Line: %d\n"
+        "Function: %s\n"
         "LR: %08X\n",
-        expr, file, line, lr
+        expr, file, line, func,
+        reinterpret_cast<u32>(__builtin_return_address(0))
     );
 
     Console::Print("E[IOS AssertFail] Assertion failed:\n");
@@ -71,17 +74,6 @@ void AssertFail(const char* file, int line, u32 lr, const char* expr)
     IOS_CancelThread(0, 0);
     while (true) {
     }
-}
-
-ASM_ARM_FUNCTION(void __assert_func(
-                     const char* file, int line, const char* func,
-                     const char* expr
-                 ),
-                 // clang-format off
-    mov     r2, lr;
-    b       AssertFail;
-                 // clang-format on
-);
 }
 
 bool s_timerStarted = false;

@@ -42,6 +42,9 @@ public:
 
         // Results from the host controller.
         Halted = -7102,
+
+        // Results added for this specific interface.
+        READY = 1,
     };
 
     enum class ClassCode : u8 {
@@ -216,16 +219,42 @@ public:
 
     static_assert(sizeof(DeviceInfo) == 0xC0);
 
-    USB(s32 id);
+    ~USB()
+    {
+        if (m_verBuffer != nullptr) {
+            IOS::Free(m_verBuffer);
+            m_verBuffer = nullptr;
+        }
+    }
 
     /**
-     * Initialize the interface.
+     * Initialize the interface. This is a tick function; keep calling until
+     * return is USB::USBError::READY or an error.
+     * @param[in] index - The index of the USB interface to open.
+     * @param[out] queue - The queue to send the response to. Cannot be nullptr.
+     * @param[out] req - The request to use in the asynchronous open call.
+     * Cannot be nullptr, and must be the same request for all calls.
+     * @returns USB::USBError:OK if the chain is still in progress,
+     * USB::USBError::READY if the chain is complete, or any other value for an
+     * error.
      */
-    bool Init();
+    USBError
+    InitChain(int index, Queue<IOS::Request*>* queue, IOS::Request* req);
 
+    /**
+     * Check if the interface is open.
+     */
     bool IsOpen() const
     {
         return m_ven.GetFd() >= 0;
+    }
+
+    /**
+     * Check the error code from opening the interface.
+     */
+    s32 GetOpenError() const
+    {
+        return m_ven.GetFd() < 0 ? m_ven.GetFd() : IOS::IOSError::OK;
     }
 
     /**
@@ -336,7 +365,8 @@ private:
         u32 devId, USBv5Ioctl ioctl, u8 endpoint, u16 length, void* data
     );
 
-    IOS::ResourceCtrl<USBv5Ioctl> m_ven;
-    Thread m_thread;
+    IOS::ResourceCtrl<USBv5Ioctl> m_ven{IOS::IOSError::NOT_FOUND};
+
     bool m_reqSent = false;
+    u32* m_verBuffer = nullptr;
 };

@@ -4,48 +4,86 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include "USB.hpp"
-#include <Log.hpp>
 #include <DiskManager.hpp>
+#include <Log.hpp>
 #include <Syscalls.h>
 #include <Types.h>
 #include <Util.h>
 
 USB* USB::s_instance = nullptr;
 
-USB::USB(s32 id)
-{
-    if (id >= 0) {
-        new (&m_ven) IOS::ResourceCtrl<USBv5Ioctl>("/dev/usb/ven", id);
-    }
-}
-
 /**
- * Initialize the interface.
+ * Initialize the interface. This is a tick function; keep calling until
+ * return is USB::USBError::READY or an error.
+ * @param[in] index - The index of the USB interface to open.
+ * @param[out] queue - The queue to send the response to. Cannot be nullptr.
+ * @param[out] req - The request to use in the asynchronous open call.
+ * Cannot be nullptr, and must be the same request for all calls.
+ * @returns USB::USBError:OK if the chain is still in progress,
+ * USB::USBError::READY if the chain is complete, or any other value for an
+ * error.
  */
-bool USB::Init()
+USB::USBError
+USB::InitChain(int index, Queue<IOS::Request*>* queue, IOS::Request* req)
 {
-    if (m_ven.GetFd() < 0) {
-        PRINT(IOS_USB, ERROR, "Failed to open /dev/usb/ven: %d", m_ven.GetFd());
-        return false;
+    if (!IsOpen()) {
+        if (GetOpenError() != IOS::IOSError::NOT_FOUND) {
+            PRINT(
+                IOS_USB, ERROR, "Failed to open /dev/usb/ven: %d", m_ven.GetFd()
+            );
+            return static_cast<USBError>(GetOpenError());
+        }
+
+        // Faking asynchronous open because I don't think IOS_OpenAsync works?
+        new (&m_ven) IOS::ResourceCtrl<USBv5Ioctl>("/dev/usb/ven", index);
+        if (GetOpenError() != IOS::IOSError::OK &&
+            GetOpenError() != IOS::IOSError::NOT_FOUND) {
+            PRINT(
+                IOS_USB, ERROR, "Failed to open /dev/usb/ven: %d",
+                GetOpenError()
+            );
+            return static_cast<USBError>(GetOpenError());
+        }
+
+        if (GetOpenError() == IOS::IOSError::NOT_FOUND) {
+            // Send a fake tick to get the caller to call again
+            req->cmd = IOS::Cmd::REPLY;
+            req->result = IOS::IOSError::NOT_FOUND;
+            queue->Send(req);
+            return USBError::OK;
+        }
     }
 
-    // Check USB RM version.
-    u32* verBuffer = (u32*) IOS::Alloc(32);
-    s32 ret = m_ven.Ioctl(USBv5Ioctl::GetVersion, nullptr, 0, verBuffer, 32);
-    u32 ver = verBuffer[0];
-    IOS::Free(verBuffer);
+    if (m_verBuffer == nullptr) {
+        // Check USB RM version
+        m_verBuffer = (u32*) IOS::Alloc(32);
+        s32 ret = m_ven.IoctlAsync(
+            USBv5Ioctl::GetVersion, nullptr, 0, m_verBuffer, 32, queue, req
+        );
+        if (ret != IOS::IOSError::OK) {
+            PRINT(IOS_USB, ERROR, "Failed to call GetVersion: %d", ret);
+            IOS::Free(m_verBuffer);
+            m_verBuffer = nullptr;
+        }
+        return static_cast<USBError>(ret);
+    }
 
-    if (ret != IOS::IOSError::OK) {
-        PRINT(IOS_USB, ERROR, "GetVersion error: %d", ret);
-        return false;
+    u32 ver = m_verBuffer[0];
+
+    IOS::Free(m_verBuffer);
+    m_verBuffer = nullptr;
+
+    if (req->result != IOS::IOSError::OK) {
+        PRINT(IOS_USB, ERROR, "GetVersion error: %d", req->result);
+        return static_cast<USBError>(req->result);
     }
 
     if (ver != 0x00050001) {
         PRINT(IOS_USB, ERROR, "Unrecognized USB RM version: 0x%X", ver);
-        return false;
+        return USBError::Invalid;
     }
 
-    return true;
+    return USBError::READY;
 }
 
 /**
@@ -55,7 +93,8 @@ bool USB::Init()
  * entries, 32-bit aligned, MEM2 virtual = physical address.
  */
 bool USB::EnqueueDeviceChange(
-  DeviceEntry* devices, Queue<IOS::Request*>* queue, IOS::Request* req)
+    DeviceEntry* devices, Queue<IOS::Request*>* queue, IOS::Request* req
+)
 {
     if (m_reqSent) {
         s32 ret = m_ven.Ioctl(USBv5Ioctl::AttachFinish, nullptr, 0, nullptr, 0);
@@ -66,8 +105,10 @@ bool USB::EnqueueDeviceChange(
     }
 
     m_reqSent = false;
-    s32 ret = m_ven.IoctlAsync(USBv5Ioctl::GetDeviceChange, nullptr, 0, devices,
-      sizeof(DeviceEntry) * MaxDevices, queue, req);
+    s32 ret = m_ven.IoctlAsync(
+        USBv5Ioctl::GetDeviceChange, nullptr, 0, devices,
+        sizeof(DeviceEntry) * MaxDevices, queue, req
+    );
     if (ret != IOS::IOSError::OK) {
         PRINT(IOS_USB, ERROR, "GetDeviceChange async error: %d", ret);
         return false;
@@ -89,7 +130,8 @@ USB::USBError USB::GetDeviceInfo(u32 devId, DeviceInfo* outInfo, u8 alt)
     void* tempInfo = IOS::Alloc(sizeof(DeviceInfo));
 
     s32 ret = m_ven.Ioctl(
-      USBv5Ioctl::GetDeviceInfo, input, 32, tempInfo, sizeof(DeviceInfo));
+        USBv5Ioctl::GetDeviceInfo, input, 32, tempInfo, sizeof(DeviceInfo)
+    );
     memcpy(outInfo, tempInfo, sizeof(DeviceInfo));
 
     IOS::Free(input);
@@ -143,8 +185,10 @@ USB::USBError USB::CancelEndpoint(u32 devId, u8 endpoint)
     return static_cast<USBError>(ret);
 }
 
-USB::USBError USB::CtrlMsg(u32 devId, u8 requestType, u8 request, u16 value,
-  u16 index, u16 length, void* data)
+USB::USBError USB::CtrlMsg(
+    u32 devId, u8 requestType, u8 request, u16 value, u16 index, u16 length,
+    void* data
+)
 {
     // Must be in a physical = virtual region.
     assert((u32) data >= 0x10000000 && (u32) data < 0x14000000);
@@ -159,12 +203,12 @@ USB::USBError USB::CtrlMsg(u32 devId, u8 requestType, u8 request, u16 value,
     Input* msg = (Input*) IOS::Alloc(sizeof(Input));
     msg->fd = devId;
     msg->ctrl = {
-      .requestType = requestType,
-      .request = request,
-      .value = value,
-      .index = index,
-      .length = length,
-      .data = data,
+        .requestType = requestType,
+        .request = request,
+        .value = value,
+        .index = index,
+        .length = length,
+        .data = data,
     };
 
     s32 ret;
@@ -197,7 +241,8 @@ USB::USBError USB::CtrlMsg(u32 devId, u8 requestType, u8 request, u16 value,
 }
 
 USB::USBError USB::IntrBulkMsg(
-  u32 devId, USBv5Ioctl ioctl, u8 endpoint, u16 length, void* data)
+    u32 devId, USBv5Ioctl ioctl, u8 endpoint, u16 length, void* data
+)
 {
     // Must be in a physical = virtual region.
     assert((u32) data >= 0x10000000 && (u32) data < 0x14000000);
@@ -214,16 +259,16 @@ USB::USBError USB::IntrBulkMsg(
 
     if (ioctl == USBv5Ioctl::IntrTransfer) {
         msg->intr = {
-          .data = data,
-          .length = length,
-          .endpoint = endpoint,
+            .data = data,
+            .length = length,
+            .endpoint = endpoint,
         };
     } else if (ioctl == USBv5Ioctl::BulkTransfer) {
         msg->bulk = {
-          .data = data,
-          .length = length,
-          .pad = {0},
-          .endpoint = endpoint,
+            .data = data,
+            .length = length,
+            .pad = {0},
+            .endpoint = endpoint,
         };
     } else {
         IOS::Free(msg);

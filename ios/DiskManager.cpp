@@ -13,6 +13,8 @@
 #include <Types.h>
 #include <cstdio>
 
+static constexpr int USB_INDEX = 10;
+
 DiskManager* DiskManager::s_instance;
 
 DiskManager::DiskManager()
@@ -23,11 +25,14 @@ DiskManager::DiskManager()
     m_timer = IOS_CreateTimer(0, 64000, m_timerQueue.GetID(), 0);
     assert(m_timer >= 0);
 
-    USB::s_instance = new USB(0);
-    auto ret = USB::s_instance->Init();
-    assert(ret);
+    USB::s_instance = new USB();
 
-    // Reset everything to default.
+    USB::USBError usbRet =
+        USB::s_instance->InitChain(USB_INDEX, &m_timerQueue, &m_usbRequest);
+    // It will never be ready the first call
+    assert(usbRet == USB::USBError::OK);
+
+    // Reset everything to default
     for (u32 i = 0; i < DeviceCount; i++) {
         InitHandle(i);
     }
@@ -240,29 +245,43 @@ void DiskManager::Run()
     auto usbDevices = (USB::DeviceEntry*) IOS::Alloc(
         sizeof(USB::DeviceEntry) * USB::MaxDevices
     );
-    IOS::Request usbReq = {};
-    if (!USB::s_instance->EnqueueDeviceChange(
-            usbDevices, &m_timerQueue, &usbReq
-        ))
-        USBFatal();
 
     while (true) {
         // Wait for 64 ms.
         auto req = m_timerQueue.Receive();
 
-        if (req == &usbReq) {
-            PRINT(IOS_DevMgr, INFO, "USB device change");
+        if (req == &m_usbRequest) {
             assert(req->cmd == IOS::Cmd::REPLY);
 
-            u32 count = req->result;
-            USBChange(usbDevices, count);
-            usbReq = {};
-            if (!USB::s_instance->EnqueueDeviceChange(
-                    usbDevices, &m_timerQueue, &usbReq
-                ))
-                USBFatal();
-        }
+            USB::USBError usbRet = USB::USBError::READY;
 
+            if (!m_usbOpen) {
+                usbRet = USB::s_instance->InitChain(
+                    USB_INDEX, &m_timerQueue, &m_usbRequest
+                );
+
+                if (usbRet == USB::USBError::READY) {
+                    m_usbOpen = true;
+                    PRINT(IOS_DevMgr, INFO, "USB interface opened");
+                } else if (usbRet != USB::USBError::OK) {
+                    USBFatal();
+                }
+            } else {
+                PRINT(IOS_DevMgr, INFO, "USB device change");
+
+                u32 count = req->result;
+                USBChange(usbDevices, count);
+            }
+
+            if (usbRet == USB::USBError::READY) {
+                m_usbRequest = {};
+                if (!USB::s_instance->EnqueueDeviceChange(
+                        usbDevices, &m_timerQueue, &m_usbRequest
+                    )) {
+                    USBFatal();
+                }
+            }
+        }
         for (u32 i = 0; i < DeviceCount; i++) {
             UpdateHandle(i);
         }

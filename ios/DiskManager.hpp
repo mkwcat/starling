@@ -79,7 +79,8 @@ private:
     };
 
     USBDeviceHandle m_usbDevices[USB::MaxDevices];
-
+    IOS::Request m_usbRequest = {};
+    bool m_usbOpen = false;
     u32 m_usbDeviceCount = 0;
     bool m_usbError = false;
 
