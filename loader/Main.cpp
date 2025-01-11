@@ -142,7 +142,7 @@ bool ReadWiiShopTMD()
         return false;
     }
 
-    if (s_shopTmd.numContents < 1) {
+    if (s_shopTmd.numContents < 2) {
         Console::Print("\nERROR : Invalid rgnsel TMD contents.\n");
         return false;
     }
@@ -165,6 +165,10 @@ static std::array<u8, 20> s_rgnselVersions[] = {
     // 2: Cv2
     {0x09, 0xF0, 0x70, 0xA7, 0x4B, 0x64, 0xB2, 0xD5, 0xF1, 0x20,
      0x25, 0xA6, 0x10, 0xD3, 0x96, 0x36, 0xEB, 0x1C, 0xF3, 0xED},
+
+    // 3: WiiLink Pv2 Ev2 Jv2
+    {0x1D, 0xA0, 0x1E, 0x08, 0x68, 0x2D, 0x58, 0xB2, 0x2B, 0x6E,
+     0x9F, 0x95, 0x40, 0x1C, 0x38, 0xCC, 0x6D, 0xB8, 0xE2, 0x26},
 };
 
 bool LoadWiiShopDOL()
@@ -202,6 +206,10 @@ bool LoadWiiShopDOL()
     if (s_rgnselVer == 2) {
         Console::Print("\nERROR : Chinese Wiis are currently not supported.\n");
         return false;
+    }
+
+    if (s_rgnselVer == 3) {
+        s_rgnselVer = 0;
     }
 
     IOS::File file_dol(path.str, IOS::Mode::READ);
