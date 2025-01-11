@@ -31,29 +31,29 @@ enum {
 constexpr char SEPARATOR_CHAR = '/';
 
 constexpr u32 MAX_PATH_DEPTH = 8;
-constexpr u32 MAX_PATH_LENGTH = 64; // Including the NULL terminator
+constexpr u32 MAX_PATH_LENGTH = 64; // Including the null terminator
 constexpr u32 MAX_NAME_LENGTH = 12;
 constexpr u32 EMUFS_MAX_PATH_LENGTH = 2048;
 
 constexpr s32 MAX_OPEN_COUNT = 15;
 
 enum class ISFSIoctl {
-    FORMAT = 0x1,
-    GET_STATS = 0x2,
-    CREATE_DIR = 0x3,
-    READ_DIR = 0x4,
-    SET_ATTR = 0x5,
-    GET_ATTR = 0x6,
-    DELETE = 0x7,
-    RENAME = 0x8,
-    CREATE_FILE = 0x9,
-    GET_FILE_STATS = 0xB,
-    GET_USAGE = 0xC,
-    SHUTDOWN = 0xD,
+    FORMAT = 1,
+    GET_STATS = 2,
+    CREATE_DIR = 3,
+    READ_DIR = 4,
+    SET_ATTR = 5,
+    GET_ATTR = 6,
+    DELETE = 7,
+    RENAME = 8,
+    CREATE_FILE = 9,
+    GET_FILE_STATS = 11,
+    GET_USAGE = 12,
+    SHUTDOWN = 13,
 
-    EX_OPEN = 0x1000,
-    EX_DIR_OPEN = 0x1001,
-    EX_DIR_NEXT = 0x1002,
+    EX_OPEN = 1000,
+    EX_DIR_OPEN,
+    EX_DIR_NEXT,
 };
 
 struct RenameBlock {
@@ -62,22 +62,48 @@ struct RenameBlock {
 };
 
 struct AttrBlock {
-    // UID, title specific
-    u32 ownerId;
-    // GID, the "maker", for example 01 (0x3031) in RMCE01.
-    u16 groupId;
-    char path[MAX_PATH_LENGTH];
+    /**
+     * UID, title specific,
+     */
+    /* 0x00 */ u32 ownerId;
+
+    /**
+     * GID, the "maker", for example 01 (0x3031) in RMCE01.
+     */
+    /* 0x04 */ u16 groupId;
+
+    /**
+     * Path to the file or directory.
+     */
+    /* 0x06 */ char path[MAX_PATH_LENGTH];
+
     // Access flags (like IOS::Mode). If the caller's identifiers match UID or
     // GID, use those permissions. Otherwise use otherPerm.
-    // Permissions for UID
-    u8 ownerPerm;
-    // Permissions for GID
-    u8 groupPerm;
-    // Permissions for any other process
-    u8 otherPerm;
-    u8 attributes;
-    u8 pad[2];
+
+    /**
+     * Permissions for UID.
+     */
+    /* 0x46 */ u8 ownerPerm;
+
+    /**
+     * Permissions for GID.
+     */
+    /* 0x47 */ u8 groupPerm;
+
+    /**
+     * Permissions for any other process.
+     */
+    /* 0x48 */ u8 otherPerm;
+
+    /**
+     * File attributes.
+     */
+    /* 0x49 */ u8 attributes;
+
+    /* 0x4A */ u8 pad[2];
 };
+
+static_assert(sizeof(AttrBlock) == 0x4C);
 
 struct Direct_Stats {
     enum {

@@ -403,12 +403,12 @@ static bool IsISFSPathValid(const char* path)
         char c = path[i];
 
         if (c == '\0') {
-#if 0
-            // Don't allow a trailing slash
-            if (i - lastSep - 1 == 0) {
-                return false;
+            if (false) {
+                // Don't allow a trailing slash, disabled for now
+                if (i - lastSep - 1 == 0) {
+                    return false;
+                }
             }
-#endif
 
             return true;
         }
@@ -552,7 +552,7 @@ s32 EmuFSHandle::CopyData(EmuFSHandle* source)
             return ret;
         }
 
-        if (u32(ret) != writeLen) {
+        if (static_cast<u32>(ret) != writeLen) {
             return ISFS::ISFSError::UNKNOWN;
         }
     }
@@ -584,6 +584,7 @@ s32 EmuFSHandle::Reopen()
 
 /**
  * Handle open file request from the filesystem proxy.
+ * Uses s_efsPath.
  * @returns ISFS error code.
  */
 s32 EmuFSHandle::OpenFile(
@@ -663,6 +664,7 @@ s32 EmuFSHandle::OpenFile(
 
 /**
  * Handles direct open directory requests.
+ * Uses s_efsPath.
  * @returns File descriptor, or ISFS error code.
  */
 s32 EmuFSHandle::DirectDirOpen(const char* path)
@@ -931,6 +933,11 @@ s32 EmuFSHandle::Seek(s32 where, s32 whence)
     }
 }
 
+/**
+ * Create a new directory.
+ * Uses s_efsPath.
+ * @returns ISFS error code.
+ */
 s32 EmuFSHandle::CreateDir(
     const char* path, u8 ownerPerm, u8 groupPerm, u8 otherPerm, u8 attributes
 )
@@ -969,6 +976,11 @@ s32 EmuFSHandle::CreateDir(
     return ISFS::ISFSError::OK;
 }
 
+/**
+ * Read the contents of a directory using the ISFS interface.
+ * Uses s_efsPath.
+ * @returns ISFS error code.
+ */
 s32 EmuFSHandle::ReadDir(
     const char* path, char* outNames, u32 outNamesSize, u32* count
 )
@@ -1084,6 +1096,11 @@ s32 EmuFSHandle::ReadDir(
     return ISFS::ISFSError::OK;
 }
 
+/**
+ * Set attributes for a file or directory.
+ * Uses s_efsPath.
+ * @returns ISFS error code.
+ */
 s32 EmuFSHandle::SetAttr(
     const char* path, u32 ownerId, u16 groupId, u8 ownerPerm, u8 groupPerm,
     u8 otherPerm, u8 attributes
@@ -1126,6 +1143,11 @@ s32 EmuFSHandle::SetAttr(
     return ISFS::ISFSError::OK;
 }
 
+/**
+ * Get attributes for a file or directory.
+ * Uses s_efsPath.
+ * @returns ISFS error code.
+ */
 s32 EmuFSHandle::GetAttr(
     const char* path, u32* ownerId, u16* groupId, u8* ownerPerm, u8* groupPerm,
     u8* otherPerm, u8* attributes
@@ -1179,6 +1201,11 @@ s32 EmuFSHandle::GetAttr(
     return ISFS::ISFSError::OK;
 }
 
+/**
+ * Delete a file or directory.
+ * Uses s_efsPath.
+ * @returns ISFS error code.
+ */
 s32 EmuFSHandle::Delete(const char* path)
 {
     if (!m_isManager) {
@@ -1219,6 +1246,11 @@ s32 EmuFSHandle::Delete(const char* path)
     return ISFS::ISFSError::OK;
 }
 
+/**
+ * Rename a file or directory.
+ * Uses s_efsPath and s_efsPath2.
+ * @returns ISFS error code.
+ */
 s32 EmuFSHandle::Rename(const char* pathOld, const char* pathNew)
 {
     if (!m_isManager) {
@@ -1333,6 +1365,11 @@ s32 EmuFSHandle::Rename(const char* pathOld, const char* pathNew)
     return Delete(pathOld);
 }
 
+/**
+ * Create a new file.
+ * Uses s_efsPath.
+ * @returns ISFS error code.
+ */
 s32 EmuFSHandle::CreateFile(
     const char* path, u8 ownerPerm, u8 groupPerm, u8 otherPerm, u8 attributes
 )
@@ -1433,6 +1470,10 @@ s32 EmuFSHandle::GetUsage(const char* path, u32* clusters, u32* inodes)
     return ISFS::ISFSError::OK;
 }
 
+/**
+ * Cycle to the next entry in a directory.
+ * @returns ISFS error code.
+ */
 s32 EmuFSHandle::DirectDirNext(char* name, u32* attributes)
 {
     (void) name;
@@ -1441,6 +1482,10 @@ s32 EmuFSHandle::DirectDirNext(char* name, u32* attributes)
     return ISFS::ISFSError::INVALID;
 }
 
+/**
+ * Get the file size and current position.
+ * @returns ISFS error code.
+ */
 s32 EmuFSHandle::GetFileStats(u32* size, u32* position)
 {
     if (!IsValidFile()) {
@@ -1947,6 +1992,18 @@ s32 EmuFSHandle::Ioctlv(
         }
     }
 
+    auto fCheckVectorCount = [command, inCount, outCount](
+                                 const char* cmdName, u32 expectedInCount,
+                                 u32 expectedOutCount
+                             ) -> bool {
+        if (inCount != expectedInCount || outCount != expectedOutCount) {
+            PRINT(IOS_EmuFS, ERROR, "%s: Wrong vector count", cmdName);
+            return false;
+        }
+
+        return true;
+    };
+
     switch (command) {
     // [ISFS_ReadDir]
     // vec[0]: path
@@ -1963,7 +2020,9 @@ s32 EmuFSHandle::Ioctlv(
         }
 
         char path[ISFS::MAX_PATH_LENGTH] = {};
-        memcpy(path, vec[0].data, std::min(vec[0].len, ISFS::MAX_PATH_LENGTH));
+        std::memcpy(
+            path, vec[0].data, std::min(vec[0].len, ISFS::MAX_PATH_LENGTH)
+        );
         if (path[ISFS::MAX_PATH_LENGTH - 1] != 0) {
             PRINT(IOS_EmuFS, ERROR, "ReadDir: Path does not terminate");
             return ISFS::ISFSError::INVALID;
@@ -2031,8 +2090,7 @@ s32 EmuFSHandle::Ioctlv(
     // vec[1](out): Used clusters
     // vec[2](out): Used inodes
     case ISFS::ISFSIoctl::GET_USAGE: {
-        if (inCount != 1 || outCount != 2) {
-            PRINT(IOS_EmuFS, ERROR, "GetUsage: Wrong vector count");
+        if (!fCheckVectorCount("GetUsage", 1, 2)) {
             return ISFS::ISFSError::INVALID;
         }
 
@@ -2061,6 +2119,49 @@ s32 EmuFSHandle::Ioctlv(
         }
 
         return GetUsage(path, usedClusters, usedInodes);
+    }
+
+    // [ISFS_ExOpen]
+    // vec[0](in): Path
+    // vec[1](in): Mode
+    case ISFS::ISFSIoctl::EX_OPEN: {
+        // This command is added to support opening files with paths longer than
+        // 63 characters
+        if (!fCheckVectorCount("ExOpen", 2, 0)) {
+            return ISFS::ISFSError::INVALID;
+        }
+
+        if (!m_isManager) {
+            PRINT(IOS_EmuFS, ERROR, "ExOpen: Not a manager handle");
+            return ISFS::ISFSError::INVALID;
+        }
+
+        if (vec[0].len == 0 || vec[0].len > ISFS::EMUFS_MAX_PATH_LENGTH) {
+            PRINT(IOS_EmuFS, ERROR, "ExOpen: Invalid input path vector");
+            return ISFS::ISFSError::INVALID;
+        }
+
+        u32* mode = ipc_vector_cast<u32>(vec[1].data, vec[1].len);
+        if (mode == nullptr) {
+            PRINT(IOS_EmuFS, ERROR, "ExOpen: Invalid mode vector");
+            return ISFS::ISFSError::INVALID;
+        }
+
+        std::memcpy(s_efsPath2, vec[0].data, vec[0].len);
+        if (!IsEmuFSPathValid(s_efsPath2)) {
+            PRINT(IOS_EmuFS, ERROR, "ExOpen: Invalid path");
+            return ISFS::ISFSError::INVALID;
+        }
+
+        if (PathElementCompare(s_efsPath2 + 1, "dev")) {
+            // Don't let the caller open a resource manager
+            return IOS::IOSError::INVALID;
+        }
+
+        // Reset the handle as we're converting it to a file handle
+        CloseBackend();
+
+        return OpenFile(s_efsPath2, *mode, m_uid, m_gid, false);
     }
 
     default:
@@ -2228,7 +2329,7 @@ static s32 HandleRequest(IOS::Request* req)
         break;
     }
 
-        PRINT(IOS_EmuFS, INFO, "Reply: %d", ret);
+    PRINT(IOS_EmuFS, INFO, "Reply: %d", ret);
 
     return ret;
 }
@@ -2251,13 +2352,8 @@ static s32 ThreadEntry([[maybe_unused]] void* arg)
 
 void DeviceEmuFS::Init()
 {
+    // The IOS_Open patch changes the first `/` to `$`
     s32 ret = IOS_RegisterResourceManager("$", s_ipcQueue.GetID());
-    if (ret != IOS::IOSError::OK) {
-        PRINT(IOS_EmuFS, ERROR, "IOS_RegisterResourceManager failed: %d", ret);
-        System::Abort();
-    }
-
-    ret = IOS_RegisterResourceManager("/dev/starling/file", s_ipcQueue.GetID());
     if (ret != IOS::IOSError::OK) {
         PRINT(IOS_EmuFS, ERROR, "IOS_RegisterResourceManager failed: %d", ret);
         System::Abort();
