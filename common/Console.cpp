@@ -21,6 +21,8 @@ constexpr u8 FG_INTENSITY = 235;
 constexpr u8 GLYPH_WIDTH = 8;
 constexpr u8 GLYPH_HEIGHT = 16;
 
+constexpr bool SIDEWAYS_CONSOLE = true;
+
 static u16 s_xfbWidth;
 static u16 s_xfbHeight;
 u32* const s_xfb = reinterpret_cast<u32*>(CONSOLE_XFB_ADDRESS);
@@ -101,8 +103,13 @@ void Console::ConfigureVideo(bool clear)
     tfbl = 1 << 28 | reinterpret_cast<u32>(s_xfb) >> 5;
     bfbl = 1 << 28 | reinterpret_cast<u32>(s_xfb) >> 5;
 
-    s_cols = GetXFBWidth() / GLYPH_WIDTH - 1;
-    s_rows = GetXFBHeight() / GLYPH_HEIGHT - 2;
+    if (!SIDEWAYS_CONSOLE) {
+        s_cols = GetXFBWidth() / GLYPH_WIDTH - 1;
+        s_rows = GetXFBHeight() / GLYPH_HEIGHT - 2;
+    } else {
+        s_cols = GetXFBHeight() / GLYPH_WIDTH - 1;
+        s_rows = GetXFBWidth() / GLYPH_HEIGHT - 2;
+    }
     s_col = 0;
 }
 
@@ -119,8 +126,13 @@ void Console::Reinit()
     s_xfbWidth = data->xfbWidth;
     s_xfbHeight = data->xfbHeight;
 
-    s_cols = GetXFBWidth() / GLYPH_WIDTH - 1;
-    s_rows = GetXFBHeight() / GLYPH_HEIGHT - 2;
+    if (!SIDEWAYS_CONSOLE) {
+        s_cols = GetXFBWidth() / GLYPH_WIDTH - 1;
+        s_rows = GetXFBHeight() / GLYPH_HEIGHT - 2;
+    } else {
+        s_cols = GetXFBHeight() / GLYPH_WIDTH - 1;
+        s_rows = GetXFBWidth() / GLYPH_HEIGHT - 2;
+    }
     s_col = 0;
 
     Print("\n");
@@ -135,10 +147,13 @@ void Console::Reinit()
  */
 static void Lock()
 {
-    auto data = reinterpret_cast<Boot_ConsoleData*>(CONSOLE_DATA_ADDRESS);
+    auto data =
+        reinterpret_cast<volatile Boot_ConsoleData*>(CONSOLE_DATA_ADDRESS);
 
-    for (u32 i = 0; i < 16;) {
-        IOS_InvalidateDCache(data, sizeof(Boot_ConsoleData));
+    for (u32 i = 0; i < 32;) {
+        IOS_InvalidateDCache(
+            const_cast<Boot_ConsoleData*>(data), sizeof(Boot_ConsoleData)
+        );
 
         u32 lock = data->lock;
 
@@ -149,7 +164,9 @@ static void Lock()
         }
 
         data->lock = lock | Boot_ConsoleData::IOS_LOCK;
-        CPUCache::DCFlush(data, sizeof(Boot_ConsoleData));
+        CPUCache::DCFlush(
+            const_cast<Boot_ConsoleData*>(data), sizeof(Boot_ConsoleData)
+        );
         i++;
     }
 }
@@ -219,10 +236,11 @@ static s32 DecrementRow()
  */
 static void Lock()
 {
-    auto data =
-        reinterpret_cast<Boot_ConsoleData*>(CONSOLE_DATA_ADDRESS | 0xC0000000);
+    auto data = reinterpret_cast<volatile Boot_ConsoleData*>(
+        CONSOLE_DATA_ADDRESS | 0xC0000000
+    );
 
-    for (u32 i = 0; i < 8;) {
+    for (u32 i = 0; i < 16;) {
         u32 lock = data->lock;
 
         // Check if IOS has locked it
@@ -271,7 +289,7 @@ static s32 IncrementRow()
         data->ppcRow = data->iosRow + 1;
     }
 
-    return data->iosRow;
+    return data->ppcRow;
 }
 
 /**
@@ -348,22 +366,41 @@ void Console::WriteGrayscaleToXFB(u16 x, u16 y, u8 intensity)
  */
 void Console::MoveUp(u16 height)
 {
-    u32 offset = height * (s_xfbWidth / 2);
+    if (!SIDEWAYS_CONSOLE) {
+        u32 offset = height * (s_xfbWidth / 2);
 
-    u32 src = AlignDown(offset, 32);
-    u32 dest = 0;
-    u32 totalSize = AlignDown(s_xfbHeight * (s_xfbWidth / 2), 32);
+        u32 src = AlignDown(offset, 32);
+        u32 dest = 0;
+        u32 totalSize = AlignDown(s_xfbHeight * (s_xfbWidth / 2), 32);
 
-    // Copy 8 words at a time
-    while (src < totalSize) {
-        s_xfb[dest++] = s_xfb[src++];
-        s_xfb[dest++] = s_xfb[src++];
-        s_xfb[dest++] = s_xfb[src++];
-        s_xfb[dest++] = s_xfb[src++];
-        s_xfb[dest++] = s_xfb[src++];
-        s_xfb[dest++] = s_xfb[src++];
-        s_xfb[dest++] = s_xfb[src++];
-        s_xfb[dest++] = s_xfb[src++];
+        // Copy 8 words at a time
+        while (src < totalSize) {
+            s_xfb[dest++] = s_xfb[src++];
+            s_xfb[dest++] = s_xfb[src++];
+            s_xfb[dest++] = s_xfb[src++];
+            s_xfb[dest++] = s_xfb[src++];
+            s_xfb[dest++] = s_xfb[src++];
+            s_xfb[dest++] = s_xfb[src++];
+            s_xfb[dest++] = s_xfb[src++];
+            s_xfb[dest++] = s_xfb[src++];
+        }
+    } else {
+        // Move left instead of up
+        u32 offset = height / 2;
+        u32 lineCount = s_xfbWidth / 2 - offset;
+
+        for (u32 y = 0; y < s_xfbHeight; y++) {
+            u32 src = y * (s_xfbWidth / 2) + offset;
+            u32 dest = y * (s_xfbWidth / 2);
+
+            for (u32 i = 0; i < lineCount; i++) {
+                s_xfb[dest++] = s_xfb[src++];
+            }
+
+            for (u32 i = 0; i < offset; i++) {
+                WriteGrayscaleToXFB(s_xfbWidth - offset + i, y, 16);
+            }
+        }
     }
 }
 
@@ -401,7 +438,8 @@ static void PrintChar(char c)
     }
 
     if (s_col >= s_cols) {
-        return;
+        IncrementRow();
+        s_col = 0;
     }
 
     s32 row = GetRow();
@@ -416,7 +454,7 @@ static void PrintChar(char c)
     }
 
     const u8* glyph = ConsoleFont[' '];
-    if (c < 128) {
+    if (u32(c) < 128) {
         glyph = ConsoleFont[u32(c)];
     }
 
@@ -428,7 +466,13 @@ static void PrintChar(char c)
                 glyph[(y * GLYPH_WIDTH + x) / 8] & (1 << (8 - (x % 8)))
                     ? FG_INTENSITY
                     : BG_INTENSITY;
-            Console::WriteGrayscaleToXFB(x0 + x, y0 + y, intensity);
+            if (SIDEWAYS_CONSOLE) {
+                Console::WriteGrayscaleToXFB(
+                    y0 + y, s_xfbHeight - (x0 + x), intensity
+                );
+            } else {
+                Console::WriteGrayscaleToXFB(x0 + x, y0 + y, intensity);
+            }
         }
     }
 

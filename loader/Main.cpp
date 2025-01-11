@@ -25,40 +25,26 @@ static inline void ClearWords(u32* data, u32 count)
 {
     count /= 8;
     while (count--) {
-        asm volatile("dcbz    0, %0\n"
-                     //"sync\n"
-                     "dcbf    0, %0\n" ::"r"(data));
+        __dcbz(data);
+        __dcbf(data);
         data += 8;
     }
 }
 
 static inline void CopyWords(u32* dest, u32* src, u32 count)
 {
-    u32 value = 0;
     count /= 8;
     while (count--) {
-        asm volatile(
-            "dcbz    0, %1\n"
-            //"sync\n"
-            "lwz     %0, 0(%2)\n"
-            "stw     %0, 0(%1)\n"
-            "lwz     %0, 4(%2)\n"
-            "stw     %0, 4(%1)\n"
-            "lwz     %0, 8(%2)\n"
-            "stw     %0, 8(%1)\n"
-            "lwz     %0, 12(%2)\n"
-            "stw     %0, 12(%1)\n"
-            "lwz     %0, 16(%2)\n"
-            "stw     %0, 16(%1)\n"
-            "lwz     %0, 20(%2)\n"
-            "stw     %0, 20(%1)\n"
-            "lwz     %0, 24(%2)\n"
-            "stw     %0, 24(%1)\n"
-            "lwz     %0, 28(%2)\n"
-            "stw     %0, 28(%1)\n"
-            "dcbf    0, %1\n" ::"r"(value),
-            "r"(dest), "r"(src)
-        );
+        __dcbz(dest);
+        dest[0] = src[0];
+        dest[1] = src[1];
+        dest[2] = src[2];
+        dest[3] = src[3];
+        dest[4] = src[4];
+        dest[5] = src[5];
+        dest[6] = src[6];
+        dest[7] = src[7];
+        __dcbf(dest);
         dest += 8;
         src += 8;
     }
@@ -67,10 +53,8 @@ static inline void CopyWords(u32* dest, u32* src, u32 count)
 void WaitMilliseconds(u32 milliseconds)
 {
     u32 duration = milliseconds * 60750;
-    u32 start;
-    asm volatile("mftbl %0" : "=r"(start));
-    for (u32 current = start; current - start < duration;) {
-        asm volatile("mftbl %0" : "=r"(current));
+    u32 start = __builtin_ppc_mftb();
+    while (__builtin_ppc_mftb() - start < duration) {
     }
 }
 
