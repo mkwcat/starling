@@ -162,7 +162,7 @@ static s32 ReqIoctl(
 {
     LOADER_ASSERT(fd == 0);
 
-    if (cmd != static_cast<s32>(IOS::FileIoctl::GetFileStats)) {
+    if (cmd != static_cast<s32>(ISFS::ISFSIoctl::GET_FILE_STATS)) {
         // Not a file ioctl!
         LOADER_PRINT(ERROR, "Received unknown ioctl: %d", cmd);
         return ISFS::ISFSError::INVALID;

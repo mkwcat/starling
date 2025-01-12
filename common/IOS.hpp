@@ -5,9 +5,11 @@
 
 #pragma once
 
+#include <ISFSTypes.hpp>
 #include <Types.h>
 #include <Util.h>
 #include <cassert>
+#include <cstring>
 
 #ifdef TARGET_IOS
 #  include <OS.hpp>
@@ -393,11 +395,7 @@ public:
 #endif
 };
 
-enum class FileIoctl {
-    GetFileStats = 11
-};
-
-class File : public ResourceCtrl<FileIoctl>
+class File : public ResourceCtrl<ISFS::ISFSIoctl>
 {
 public:
     struct Stats {
@@ -406,6 +404,34 @@ public:
     };
 
     using ResourceCtrl::ResourceCtrl;
+
+    File(const char* path, u32 mode = 0)
+    {
+        if (std::strlen(path) < 64) {
+            this->m_fd = IOS_Open(path, mode);
+            return;
+        }
+
+        // Long path
+        this->m_fd = IOS_Open("/dev/fs", IOS::Mode::NONE);
+        if (this->m_fd < 0) {
+            return;
+        }
+
+        IOVector<2, 0> vec;
+        vec.in[0].data = path;
+        vec.in[0].len = std::strlen(path) + 1;
+        vec.in[1].data = &mode;
+        vec.in[1].len = sizeof(u32);
+
+        s32 ret = this->Ioctlv(ISFS::ISFSIoctl::EX_OPEN, vec);
+
+        if (ret < 0) {
+            this->Close();
+            this->m_fd = ret;
+            return;
+        }
+    }
 
     u32 Tell()
     {
@@ -426,7 +452,7 @@ public:
     s32 GetStats(Stats* stats)
     {
         return this->Ioctl(
-            FileIoctl::GetFileStats, nullptr, 0, stats, sizeof(Stats)
+            ISFS::ISFSIoctl::GET_FILE_STATS, nullptr, 0, stats, sizeof(Stats)
         );
     }
 };

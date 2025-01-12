@@ -384,7 +384,7 @@ static s32 PathElementCompare(const char* str1, const char* str2)
 /**
  * Checks if an ISFS path is valid.
  */
-static bool IsISFSPathValid(const char* path)
+static bool IsISFSPathValid(const char* path, bool enforceNameLength = true)
 {
     if (path == nullptr) {
         return false;
@@ -415,7 +415,8 @@ static bool IsISFSPathValid(const char* path)
 
         if (c == ISFS::SEPARATOR_CHAR) {
             size_t pat = i - lastSep - 1;
-            if (pat == 0 || pat > ISFS::MAX_NAME_LENGTH) {
+            if (pat == 0 ||
+                (pat > ISFS::MAX_NAME_LENGTH && enforceNameLength)) {
                 return false;
             }
 
@@ -500,9 +501,9 @@ static bool GetFATFSPath(
             return false;
         }
 
-        std::snprintf(
-            efsOut, outLen, "%c:%s", drive,
-            isfsPath + sizeof(EMUFS_MOUNT_POINT) + 1
+        std::snprintf(efsOut, outLen, "%c:%s", drive, isfsPath);
+        PRINT(
+            IOS_EmuFS, INFO, "Translated path '%s' to '%s'", isfsPath, efsOut
         );
         return true;
     }
@@ -591,10 +592,14 @@ s32 EmuFSHandle::OpenFile(
     const char* path, u32 mode, u32 uid, u16 gid, bool redirect
 )
 {
+    PRINT(IOS_EmuFS, INFO, "Open file '%s' mode 0x%X", path, mode);
+
     if (path[0] != ISFS::SEPARATOR_CHAR) {
         return ISFS::ISFSError::INVALID;
     }
 
+    // TODO: Add 'no redirect' as an extended flag to mode instead of having its
+    // own parameter
     m_redirect = redirect;
 
     if (std::strcmp(path, "/dev/fs") == 0) {
@@ -608,14 +613,16 @@ s32 EmuFSHandle::OpenFile(
         return m_resource.GetFd();
     }
 
-    if (PathElementCompare(path + 1, "dev")) {
+    if (PathElementCompare(path + 1, "dev") == 0) {
         // Don't let the caller open a resource manager
+        PRINT(IOS_EmuFS, ERROR, "Attempt to open a resource manager");
         return IOS::IOSError::INVALID;
     }
 
     // Get the replaced path
     if (!GetFATFSPath(path, s_efsPath, sizeof(s_efsPath), redirect)) {
         if (s_efsPath[0] == '\0') {
+            PRINT(IOS_EmuFS, ERROR, "Failed to get replaced path");
             return ISFS::ISFSError::INVALID;
         }
 
@@ -631,6 +638,7 @@ s32 EmuFSHandle::OpenFile(
         m_isManager = false;
         m_inUse = true;
         m_backendFileOpened = true;
+        m_accessMode = mode;
 
         return ISFS::ISFSError::OK;
     }
@@ -651,13 +659,7 @@ s32 EmuFSHandle::OpenFile(
     m_isManager = false;
     m_inUse = true;
     m_backendFileOpened = true;
-    m_proxyPath[0] = '\0';
-
-    // Check if it's a proxy file
-    if (redirect && IsISFSPathValid(path) &&
-        PathElementCompare(path + 1, EMUFS_MOUNT_POINT) == 0) {
-        std::strncpy(m_proxyPath, path, ISFS::MAX_PATH_LENGTH);
-    }
+    m_accessMode = mode;
 
     return ISFS::ISFSError::OK;
 }
@@ -1073,7 +1075,7 @@ s32 EmuFSHandle::ReadDir(
         }
 
         if (entry < maxCount) {
-            char nameData[13] = {0};
+            char nameData[13] = {};
             std::strncpy(nameData, name, sizeof(nameData));
             std::memcpy(outNames + entry * 13, nameData, sizeof(nameData));
         }
@@ -2155,6 +2157,9 @@ s32 EmuFSHandle::Ioctlv(
 
         if (PathElementCompare(s_efsPath2 + 1, "dev")) {
             // Don't let the caller open a resource manager
+            PRINT(
+                IOS_EmuFS, ERROR, "ExOpen: Attempt to open a resource manager"
+            );
             return IOS::IOSError::INVALID;
         }
 
@@ -2187,10 +2192,6 @@ static s32 HandleRequest(IOS::Request* req)
     case IOS::Cmd::OPEN: {
         char path[ISFS::MAX_PATH_LENGTH] = {};
         std::memcpy(path, req->open.path, ISFS::MAX_PATH_LENGTH);
-        if (path[ISFS::MAX_PATH_LENGTH - 1] != 0) {
-            ret = ISFS::ISFSError::INVALID;
-            break;
-        }
 
         if (path[0] != ISFS::SEPARATOR_CHAR && path[0] != '$') {
             // Not handled here, fall through to the next resource
@@ -2198,6 +2199,13 @@ static s32 HandleRequest(IOS::Request* req)
             break;
         }
         path[0] = ISFS::SEPARATOR_CHAR;
+
+        // Check path length
+        if (strnlen(path, ISFS::MAX_PATH_LENGTH) == ISFS::MAX_PATH_LENGTH) {
+            PRINT(IOS_EmuFS, ERROR, "Open: Path too long");
+            ret = ISFS::ISFSError::INVALID;
+            break;
+        }
 
         if (PathElementCompare(path + 1, "dev") == 0 &&
             (path[4] == '\0' || PathElementCompare(path + 5, "fs") != 0)) {
@@ -2208,12 +2216,19 @@ static s32 HandleRequest(IOS::Request* req)
 
         // Basic sanity check
         if (req->open.mode > IOS::Mode::READ_WRITE) {
+            PRINT(IOS_EmuFS, ERROR, "Open: Invalid mode: %d", req->open.mode);
+            ret = ISFS::ISFSError::INVALID;
+            break;
+        }
+
+        if (!IsISFSPathValid(path, false)) {
+            PRINT(IOS_EmuFS, ERROR, "Open: Invalid path: %s", path);
             ret = ISFS::ISFSError::INVALID;
             break;
         }
 
         // Check if the file is already open
-        s32 ret = EmuFSHandle::FindProxyHandle(path);
+        ret = EmuFSHandle::FindProxyHandle(path);
         if (ret < 0) {
             break;
         }

@@ -150,7 +150,7 @@ static void Lock()
     auto data =
         reinterpret_cast<volatile Boot_ConsoleData*>(CONSOLE_DATA_ADDRESS);
 
-    for (u32 i = 0; i < 32;) {
+    for (u32 i = 0; i < 8;) {
         IOS_InvalidateDCache(
             const_cast<Boot_ConsoleData*>(data), sizeof(Boot_ConsoleData)
         );
@@ -409,7 +409,7 @@ void Console::MoveUp(u16 height)
  */
 void Console::FlushXFB()
 {
-    CPUCache::DCStore(s_xfb, 320 * 574 * sizeof(u32));
+    CPUCache::DCFlush(s_xfb, 320 * 574 * sizeof(u32));
 }
 
 /**

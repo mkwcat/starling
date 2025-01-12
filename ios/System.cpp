@@ -201,6 +201,8 @@ s32 System::ThreadEntry([[maybe_unused]] void* arg)
     DeviceEmuDI::Init();
     DeviceEmuFS::Init();
 
+    Kernel::PatchIOSOpen();
+
     new Thread(DeviceEmuES::ThreadEntry, nullptr, nullptr, 0x2000, 80);
 
     // Kernel::PatchIOSOpen();

@@ -349,15 +349,17 @@ void Launch()
     }
     Console::Print("OK\n");
 
-    argc = 9;
+    argc = 5;
     argv[1] = "--patch-id";
     argv[2] = "nsmbw-pipe-randomizer";
     argv[3] = "--patch-id=";
-    argv[4] = "--riivo-xml=xmlpath";
+    argv[4] = "--riivo-xml=/mnt/sd/riivolution/mkwcat-special-nsmbw-project.xml";
     argv[5] = "--riivo-xml";
     argv[6] = "the_other_path";
     argv[7] = "--riivo-xml=";
     argv[8] = "--riivo-xml";
+
+    WaitMilliseconds(1000);
 
     PRINT(System, INFO, "Start the command line\n");
 
@@ -369,6 +371,8 @@ void Launch()
         PRINT(System, INFO, "Start the game");
         arguments.Launch();
     }
+
+    while (true) {}
 
     // Not enough arguments to start a game directly
     Console::Print("I[Loader] > Booting into Channel\n");
