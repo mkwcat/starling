@@ -2,6 +2,8 @@
 #define RAPIDXML_HPP_INCLUDED
 
 #define RAPIDXML_NO_EXCEPTIONS
+    
+#define RAPIDXML_STATIC_POOL_SIZE (1024 * 1024)
 
 // Copyright (C) 2006, 2009 Marcin Kalicinski
 // Version 1.13
@@ -606,6 +608,7 @@ namespace rapidxml
             // If not enough memory left in current pool, allocate a new pool
             if (result + size > m_end)
             {
+#if 0
                 // Calculate required pool size (may be bigger than RAPIDXML_DYNAMIC_POOL_SIZE)
                 std::size_t pool_size = RAPIDXML_DYNAMIC_POOL_SIZE;
                 if (pool_size < size)
@@ -625,6 +628,9 @@ namespace rapidxml
 
                 // Calculate aligned pointer again using new pool
                 result = align(m_ptr);
+#else 
+                RAPIDXML_PARSE_ERROR("out of memory", 0);
+#endif
             }
 
             // Update pool and return aligned pointer

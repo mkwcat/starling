@@ -1,9 +1,22 @@
 #include "PatchManager.hpp"
 #include "PatchUnit.hpp"
 #include "PatchUnitRiivolution.hpp"
+#include <AddressMap.h>
 #include <IOS.hpp>
 #include <Log.hpp>
 #include <XML/rapidxml.hpp>
+#include <cassert>
+
+PatchUnit* PatchManager::s_first;
+PatchUnit* PatchManager::s_last;
+
+void PatchManager::StaticInit()
+{
+    s_first = reinterpret_cast<PatchUnit*>(PATCH_LIST_ADDRESS);
+    s_first->m_next = nullptr;
+    s_first->m_type = PatchUnit::Type::DISABLED;
+    s_last = s_first;
+}
 
 bool PatchManager::LoadRiivolutionXML(const char* path)
 {
@@ -20,37 +33,56 @@ bool PatchManager::LoadRiivolutionXML(const char* path)
         return false;
     }
 
-    s32 size = xmlFile.GetSize();
-    if (size == 0) {
-        PRINT(Patcher, ERROR, "Riivolution XML file is empty");
-        return false;
-    }
+    PatchUnitRiivolution* patchUnit =
+        CreatePatchUnit<PatchUnitRiivolution>(0, xmlFile);
+    assert(patchUnit != nullptr);
 
-    char xmlData[size + 1];
-    s32 ret = xmlFile.Read(xmlData, size);
-    if (ret != size) {
-        PRINT(Patcher, ERROR, "Failed to read Riivolution XML file: %d", ret);
-        return false;
-    }
-
-    xmlData[size] = '\0';
-
-    PRINT(Patcher, INFO, "Riivolution XML file data: %s", xmlData);
-
-    rapidxml::xml_document<> doc;
-    doc.parse<0>(xmlData);
-
-    PRINT(
-        Patcher, INFO, "Riivolution XML file parsed: %s",
-        doc.first_node()->name()
-    );
-
-    return true;
+    return patchUnit->IsValid();
 }
 
-void rapidxml::parse_error_handler(
-    const char* what, [[maybe_unused]] void* where
+bool PatchManager::LoadPatchID(const char* patchId)
+{
+    PRINT(Patcher, INFO, "Loading patch ID '%s'", patchId);
+
+    for (PatchUnit* patchUnit = s_first; patchUnit != nullptr;
+         patchUnit = patchUnit->m_next) {
+        PatchUnitRiivolution* riivolution =
+            PatchUnitRiivolution::Get(patchUnit);
+        if (riivolution == nullptr) {
+            continue;
+        }
+
+        if (!riivolution->HandlePatch(
+                patchId,
+                [riivolution](const PatchUnitRiivolution::PatchNode& node) {
+            return HandlePatchNode(riivolution, node);
+        }
+            )) {
+            return false;
+        }
+
+        return true;
+    }
+
+    PRINT(Patcher, ERROR, "Failed to find patch ID '%s'", patchId);
+    return false;
+}
+
+bool PatchManager::HandlePatchNode(
+    [[maybe_unused]] PatchUnitRiivolution* unit,
+    const PatchUnitRiivolution::PatchNode& node
 )
 {
-    PRINT(Patcher, ERROR, "Riivolution XML parse error: %s", what);
+    if (auto* fileNode = std::get_if<PatchUnitRiivolution::FileNode>(&node)) {
+        // File node
+
+        if (fileNode->disc == nullptr) {
+            PRINT(Patcher, ERROR, "File node missing 'disc' attribute");
+            return false;
+        }
+
+        PRINT(Patcher, INFO, "File node: %s", fileNode->disc);
+    }
+
+    return true;
 }

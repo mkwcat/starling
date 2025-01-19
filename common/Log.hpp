@@ -12,6 +12,7 @@ namespace Log
 
 enum class LogSource {
     System,
+    LibCPP,
     DVD,
     BS2,
     Patcher,

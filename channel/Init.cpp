@@ -115,24 +115,6 @@ void ConfigBATs()
 {
 }
 
-void std::__throw_length_error(const char* str)
-{
-    OSPanic(__FILE__, __LINE__, "std::__throw_length_error: %s", str);
-    __builtin_unreachable();
-}
-
-void std::__throw_bad_array_new_length()
-{
-    OSPanic(__FILE__, __LINE__, "std::__throw_bad_array_new_length");
-    __builtin_unreachable();
-}
-
-void std::__throw_bad_alloc()
-{
-    OSPanic(__FILE__, __LINE__, "std::__throw_bad_alloc");
-    __builtin_unreachable();
-}
-
 IMPORT(0x800E66F8) //
 void someprintf(const char* str);
 

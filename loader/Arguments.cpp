@@ -159,16 +159,15 @@ bool Arguments::HasOption(ArgOption option) const
         false, ArgOption::OPT_UNKNOWN,
         [](ArgOption option, [[maybe_unused]] const char* value,
            void* userData) -> bool {
-            HasOptionData* hasOptionData =
-                static_cast<HasOptionData*>(userData);
+        HasOptionData* hasOptionData = static_cast<HasOptionData*>(userData);
 
-            if (option == hasOptionData->option) {
-                hasOptionData->hasOption = true;
-                return false;
-            }
+        if (option == hasOptionData->option) {
+            hasOptionData->hasOption = true;
+            return false;
+        }
 
-            return true;
-        },
+        return true;
+    },
         &hasOptionData
     );
 
@@ -202,25 +201,25 @@ bool Arguments::IsStartReady() const
         false, ArgOption::OPT_UNKNOWN,
         [](ArgOption option, [[maybe_unused]] const char* value,
            void* userData) -> bool {
-            ReadyData* readyData = static_cast<ReadyData*>(userData);
+        ReadyData* readyData = static_cast<ReadyData*>(userData);
 
-            switch (option) {
-            case ArgOption::OPT_LAUNCH:
-                readyData->ready = true;
-                break;
+        switch (option) {
+        case ArgOption::OPT_LAUNCH:
+            readyData->ready = true;
+            break;
 
-                // If patch ID is specified on its own, /dev/di is used for
-                // launch by default
-            case ArgOption::OPT_PATCH_ID:
-                readyData->ready = true;
-                break;
+            // If patch ID is specified on its own, /dev/di is used for
+            // launch by default
+        case ArgOption::OPT_PATCH_ID:
+            readyData->ready = true;
+            break;
 
-            default:
-                break;
-            }
+        default:
+            break;
+        }
 
-            return true;
-        },
+        return true;
+    },
         &readyData
     );
 }
@@ -242,29 +241,29 @@ void Arguments::Launch()
         false, ArgOption::OPT_UNKNOWN,
         [](ArgOption option, [[maybe_unused]] const char* value,
            void* userData) -> bool {
-            LaunchData* launchData = static_cast<LaunchData*>(userData);
+        LaunchData* launchData = static_cast<LaunchData*>(userData);
 
-            switch (option) {
-            case ArgOption::OPT_LAUNCH:
-                launchData->ready = true;
-                launchData->launchPath = value;
-                break;
+        switch (option) {
+        case ArgOption::OPT_LAUNCH:
+            launchData->ready = true;
+            launchData->launchPath = value;
+            break;
 
-            case ArgOption::OPT_RIIVO_XML:
-                launchData->hasRiivoXml = true;
-                break;
+        case ArgOption::OPT_RIIVO_XML:
+            launchData->hasRiivoXml = true;
+            break;
 
-            case ArgOption::OPT_PATCH_ID:
-                launchData->ready = true;
-                launchData->hasPatchId = true;
-                break;
+        case ArgOption::OPT_PATCH_ID:
+            launchData->ready = true;
+            launchData->hasPatchId = true;
+            break;
 
-            default:
-                break;
-            }
+        default:
+            break;
+        }
 
-            return true;
-        },
+        return true;
+    },
         &launchData
     );
 
@@ -281,22 +280,44 @@ void Arguments::Launch()
                 false, ArgOption::OPT_RIIVO_XML,
                 [](ArgOption option, const char* value,
                    void* userData) -> bool {
-                    if (option != ArgOption::OPT_RIIVO_XML) {
-                        return true;
-                    }
-
-                    PatchManager& patchManager =
-                        *static_cast<PatchManager*>(userData);
-
-                    if (!patchManager.LoadRiivolutionXML(value)) {
-                        PRINT(
-                            Patcher, ERROR,
-                            "Failed to load Riivolution XML path '%s'", value
-                        );
-                    }
-
+                if (option != ArgOption::OPT_RIIVO_XML) {
                     return true;
                 }
+
+                PatchManager& patchManager =
+                    *static_cast<PatchManager*>(userData);
+
+                if (!patchManager.LoadRiivolutionXML(value)) {
+                    PRINT(
+                        Patcher, ERROR,
+                        "Failed to load Riivolution XML path '%s'", value
+                    );
+                }
+
+                return true;
+            }
+            );
+
+            Handle(
+                false, ArgOption::OPT_PATCH_ID,
+                [](ArgOption option, const char* value,
+                   void* userData) -> bool {
+                if (option != ArgOption::OPT_PATCH_ID) {
+                    return true;
+                }
+
+                PatchManager& patchManager =
+                    *static_cast<PatchManager*>(userData);
+
+                if (!patchManager.LoadPatchID(value)) {
+                    PRINT(
+                        Patcher, ERROR, "Failed to load patch ID '%s'", value
+                    );
+                }
+
+                return true;
+            },
+                &patchManager
             );
         } else {
             // No Riivolution XML path specified, load the default paths

@@ -10,6 +10,12 @@
 #include <string.h>
 #include <strings.h>
 
+#define PRAGMA(...) _Pragma(#__VA_ARGS__)
+
+#ifndef ATTRIBUTE
+#  define ATTRIBUTE(v) __attribute__((v))
+#endif
+
 #ifndef ATTRIBUTE_ALIGN
 #  define ATTRIBUTE_ALIGN(v) __attribute__((aligned(v)))
 #endif
@@ -30,6 +36,10 @@
 #  define ATTRIBUTE_NOINLINE __attribute__((noinline))
 #endif
 
+#ifndef ATTRIBUTE_OPTIMIZE
+#  define ATTRIBUTE_OPTIMIZE(v) __attribute__((optimize(#v)))
+#endif
+
 #ifdef __cplusplus
 #  define EXTERN_C_START extern "C" {
 #  define EXTERN_C_END }
@@ -44,26 +54,48 @@
 
 #define ASM(...) asm volatile(#__VA_ARGS__)
 
-#define ASM_THUMB_FUNCTION(_PROTOTYPE, ...)                                    \
-    _Pragma("GCC diagnostic push");                                            \
-    _Pragma("GCC diagnostic ignored \"-Wreturn-type\"");                       \
-    _Pragma("GCC diagnostic ignored \"-Wunused-parameter\"");                  \
-    __attribute__((naked)) ATTRIBUTE_TARGET(thumb)                             \
-        ATTRIBUTE_NOINLINE _PROTOTYPE                                          \
-    {                                                                          \
-        ASM(__VA_ARGS__);                                                      \
-    }                                                                          \
-    _Pragma("GCC diagnostic pop");
+#ifdef TARGET_IOS
 
-#define ASM_ARM_FUNCTION(_PROTOTYPE, ...)                                      \
-    _Pragma("GCC diagnostic push");                                            \
-    _Pragma("GCC diagnostic ignored \"-Wreturn-type\"");                       \
-    _Pragma("GCC diagnostic ignored \"-Wunused-parameter\"");                  \
-    __attribute__((naked)) ATTRIBUTE_TARGET(arm) ATTRIBUTE_NOINLINE _PROTOTYPE \
-    {                                                                          \
-        ASM(__VA_ARGS__);                                                      \
-    }                                                                          \
-    _Pragma("GCC diagnostic pop");
+#  define ASM_ARM_FUNCTION(_PROTOTYPE, ...)                                    \
+      PRAGMA(GCC diagnostic push)                                              \
+      PRAGMA(GCC diagnostic ignored "-Wreturn-type")                           \
+      PRAGMA(GCC diagnostic ignored "-Wunused-parameter")                      \
+      ATTRIBUTE(naked) ATTRIBUTE_TARGET(arm) ATTRIBUTE_NOINLINE _PROTOTYPE     \
+      {                                                                        \
+          ASM(__VA_ARGS__);                                                    \
+      }                                                                        \
+      PRAGMA(GCC diagnostic pop)
+
+#  define ASM_THUMB_FUNCTION(_PROTOTYPE, ...)                                  \
+      PRAGMA(GCC diagnostic push)                                              \
+      PRAGMA(GCC diagnostic ignored "-Wreturn-type")                           \
+      PRAGMA(GCC diagnostic ignored "-Wunused-parameter")                      \
+      ATTRIBUTE(naked) ATTRIBUTE_TARGET(thumb) ATTRIBUTE_NOINLINE _PROTOTYPE   \
+      {                                                                        \
+          ASM(__VA_ARGS__);                                                    \
+      }                                                                        \
+      PRAGMA(GCC diagnostic pop);
+
+#  define ASM_PPC_FUNCTION(PROTOTYPE, ...)
+
+#else
+
+#  define ASM_ARM_FUNCTION(_PROTOTYPE, ...)
+
+#  define ASM_THUMB_FUNCTION(_PROTOTYPE, ...)
+
+#  define ASM_PPC_FUNCTION(_PROTOTYPE, ...)                                    \
+      PRAGMA(GCC diagnostic push)                                              \
+      PRAGMA(GCC diagnostic ignored "-Wreturn-type")                           \
+      PRAGMA(GCC diagnostic ignored "-Wunused-parameter")                      \
+      ATTRIBUTE_OPTIMIZE(Os) _PROTOTYPE                                        \
+      {                                                                        \
+          ASM(__VA_ARGS__);                                                    \
+          __builtin_unreachable();                                             \
+      }                                                                        \
+      PRAGMA(GCC diagnostic pop)
+
+#endif
 
 #ifdef __cplusplus
 

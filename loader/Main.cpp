@@ -14,12 +14,22 @@
 #include <IOS.hpp>
 #include <ImportInfo.hpp>
 #include <Log.hpp>
+#include <PatchManager.hpp>
 #include <StarlingIOS.hpp>
 #include <array>
 #include <cstring>
 #include <iterator>
 #include <stdio.h>
 #include <stdlib.h>
+
+void abort()
+{
+    Console::Print("E[Loader Abort] Abort was called!\n");
+
+    // TODO: Check if we're running in the channel and exit
+    while (true) {
+    }
+}
 
 static inline void ClearWords(u32* data, u32 count)
 {
@@ -293,6 +303,8 @@ void Launch()
     Console::Init();
     Console::Print("\n\nStarling Launcher\n\n\n");
 
+    PatchManager::StaticInit();
+
     Archive archive = GetLoaderArchive();
 
     u32 argc = 0;
@@ -351,9 +363,10 @@ void Launch()
 
     argc = 5;
     argv[1] = "--patch-id";
-    argv[2] = "nsmbw-pipe-randomizer";
+    argv[2] = "mkwcat-special-nsmbw-project";
     argv[3] = "--patch-id=";
-    argv[4] = "--riivo-xml=/mnt/sd/riivolution/mkwcat-special-nsmbw-project.xml";
+    argv[4] =
+        "--riivo-xml=/mnt/sd/riivolution/mkwcat-special-nsmbw-project.xml";
     argv[5] = "--riivo-xml";
     argv[6] = "the_other_path";
     argv[7] = "--riivo-xml=";
@@ -372,7 +385,8 @@ void Launch()
         arguments.Launch();
     }
 
-    while (true) {}
+    while (true) {
+    }
 
     // Not enough arguments to start a game directly
     Console::Print("I[Loader] > Booting into Channel\n");
