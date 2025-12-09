@@ -1,10 +1,10 @@
-# Saoirse Launcher
+# Starling
 
-Saoirse is a (WIP) portable Wii homebrew project for launching games under a modified IOS firmware. The project aims to eventually become a user-friendly launcher for game modifications.
+Starling is an unofficial Wii channel for loading games with patches. The project is a work-in-progress, and is not ready for general use even by technical users.
 
 ## Planned Features
 
-Without any requirement for installation or modification to the Wii console itself, Saoirse hopes to provide the following:
+Without any requirement for installation or modification to the Wii system memory itself, Starling hopes to provide the following:
 
 * Game file replacement.
 * Save data redirection.
@@ -13,4 +13,5 @@ Without any requirement for installation or modification to the Wii console itse
 
 ## License
 
-All code in this repository is licensed under the MIT license unless stated otherwise in an individual file header. The full text of the license can be found in the 'LICENSE' file.
+This software is licensed under the GNU General Public License version 2 (or any
+later version). The full license can be found in the [LICENSE](LICENSE) file.
